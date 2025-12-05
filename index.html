@@ -1,0 +1,2521 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BIOS-Style Terminal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Theme Variables - Default to Deep Blue based on original color scheme */
+            --primary-color: #00BFFF; 
+            --highlight-bg: #00008B; /* Dark Blue */
+            --error-color: #FF4500;
+            --text-color: #fff;
+            --keypad-bg: #000044;
+            --keypad-border: #00BFFF;
+        }
+
+        body {
+            background-color: #000;
+            color: var(--text-color); /* Use theme text color */
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            padding: 0;
+            cursor: none;
+            scroll-behavior: auto; /* Disables smooth scrolling, enabling hard scroll */
+            overflow-x: hidden; /* Prevent horizontal scroll on mobile */
+        }
+        
+        /* New Font Class for v1.0 Release */
+        body.font-inter {
+            font-family: 'Inter', sans-serif !important; /* Override the default font */
+        }
+
+        /* Class to disable all animations/transitions */
+        .instant-mode * {
+            transition: none !important;
+            animation: none !important;
+            scroll-behavior: auto !important;
+        }
+
+        .bios-screen {
+            padding: 20px;
+            min-height: 100vh; 
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .info-line {
+            margin: 8px 0;
+            white-space: pre-wrap; /* Changed from nowrap to pre-wrap for mobile text wrapping */
+            min-height: 19px; 
+            display: flex;
+            align-items: center;
+            word-break: break-word;
+        }
+
+        .boot-options {
+            margin-top: 30px;
+        }
+
+        .option {
+            margin: 10px 0;
+            padding: 2px 5px;
+            cursor: pointer; /* Changed to pointer for touch interaction */
+            width: fit-content;
+        }
+
+        /* Highlight uses the theme's highlight color */
+        .highlight {
+            color: var(--text-color);
+            background-color: var(--highlight-bg); 
+        }
+
+        /* Theme-specific colors */
+        .text-theme-primary {
+            color: var(--primary-color) !important;
+        }
+
+        /* Specific override colors */
+        .text-green {
+            color: #0f0 !important;
+        }
+        .text-blue {
+            color: #00BFFF !important; 
+        }
+        .text-red {
+            color: var(--error-color) !important; 
+        }
+
+        /* Safe Mode Label */
+        #safeModeDisplay {
+            color: var(--error-color);
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-align: center;
+            width: 100%;
+            display: none; 
+            font-size: 1.2em;
+        }
+        
+        /* Update Alert Label */
+        #updateAlertDisplay {
+            color: var(--error-color);
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+            width: 100%;
+            display: none;
+            font-size: 1.1em;
+            border: 1px dashed var(--error-color);
+            padding: 5px;
+        }
+
+        .instructions {
+            margin-top: 20px;
+            color: var(--text-color);
+        }
+
+        .content {
+            transition: opacity 0.5s;
+        }
+
+        /* Overridden in .instant-mode */
+        .fade-out {
+            opacity: 0;
+        }
+
+        .typing {
+            display: inline-block;
+            overflow: hidden;
+            white-space: pre-wrap; /* Changed for wrapping */
+            vertical-align: bottom;
+            max-width: 100%;
+        }
+        .typing > span {
+            display: inline-block;
+        }
+
+        /* Overridden in .instant-mode */
+        .typing::after {
+            content: '_';
+            animation: blink 1s infinite;
+            margin-left: 2px;
+            color: var(--text-color); /* Use theme text color */
+        }
+
+        /* Command line cursor uses a span inside a typing div, which is inside info-line */
+        /* Overridden in .instant-mode */
+        .info-line > span.typing span {
+            content: '_';
+            animation: blink 1s infinite;
+            display: inline-block;
+            margin-left: 2px;
+            color: var(--text-color); /* Use theme text color */
+        }
+
+        .command-line-cursor::after {
+            content: none;
+        }
+
+        .typing.done::after {
+            content: none;
+            display: none;
+        }
+
+        @keyframes typing {
+            from { width: 0; }
+            to { width: 100%; }
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* --- VIRTUAL KEYPAD STYLES --- */
+        #virtualKeypad {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 260px;
+            background-color: var(--keypad-bg);
+            border: 2px solid var(--keypad-border);
+            z-index: 9999;
+            box-shadow: 0 0 10px rgba(0, 191, 255, 0.3);
+            display: none; /* Hidden by default on desktop, shown via JS or media query */
+            flex-direction: column;
+            font-family: 'Courier New', monospace;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .keypad-header {
+            background-color: var(--keypad-border);
+            color: #000;
+            padding: 5px;
+            text-align: center;
+            font-weight: bold;
+            cursor: move;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .keypad-header span {
+             pointer-events: none;
+        }
+
+        .keypad-toggle-btn {
+            background: none;
+            border: 1px solid #000;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 0 4px;
+        }
+
+        .keypad-body {
+            padding: 10px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .k-btn {
+            background-color: #000;
+            color: var(--primary-color);
+            border: 1px solid var(--primary-color);
+            padding: 12px 0;
+            text-align: center;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.1s;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .k-btn:active, .k-btn.active {
+            background-color: var(--primary-color);
+            color: #000;
+        }
+
+        /* Layout specific adjustments */
+        .k-btn-spacer {
+            visibility: hidden;
+            pointer-events: none;
+        }
+        
+        /* --- NEW: Restart Modal Styles --- */
+        #restartModal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            max-width: 400px;
+            background-color: #000044; /* Dark Blue from theme */
+            border: 2px solid var(--primary-color);
+            padding: 20px;
+            z-index: 10000;
+            box-shadow: 0 0 15px rgba(0, 191, 255, 0.5);
+            display: none;
+        }
+        #restartModal .modal-header {
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: var(--primary-color);
+            text-align: center;
+        }
+        #restartModal .modal-body {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        #restartModal .modal-footer {
+            display: flex;
+            justify-content: space-around;
+        }
+        #restartModal .modal-footer button {
+            background: none;
+            color: #fff;
+            border: 1px solid #fff;
+            padding: 5px 15px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+        }
+        #restartModal .modal-footer button:hover {
+            background-color: var(--primary-color);
+            color: #000;
+        }
+        #restartModal .modal-footer button:focus {
+             outline: 1px solid #fff;
+        }
+
+        /* --- NEW: Special Restart Animation --- */
+        #restartAnimationOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 20000;
+            opacity: 0;
+            transition: opacity 0.5s;
+            display: none;
+        }
+        
+        /* Gradient Animation Keyframes: Black to Red-Orange Gradient */
+        @keyframes spread-gradient {
+            0% {
+                /* Pure Black */
+                background: #000;
+                transform: scale(0);
+                opacity: 1;
+            }
+            50% {
+                /* Spread gradient: Red to Orange comfortable palette */
+                background: radial-gradient(circle at center, #FF4500 0%, #FF8C00 50%, #000 70%);
+                transform: scale(1);
+                opacity: 1;
+            }
+            100% {
+                /* Hold the gradient */
+                background: radial-gradient(circle at center, #FF4500 0%, #FF8C00 50%, #000 70%);
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        
+        /* Class to trigger animation */
+        #restartAnimationOverlay.animate-in {
+            display: block;
+            animation: spread-gradient 3.5s ease-in-out forwards; 
+        }
+
+        /* Responsive Modifications */
+        @media (max-width: 768px) {
+            body {
+                font-size: 14px; /* Slightly smaller text for mobile */
+                cursor: auto; /* Re-enable cursor on touch devices */
+            }
+            
+            .bios-screen {
+                padding: 10px;
+                padding-bottom: 250px; /* Space for keypad */
+            }
+
+            .info-line {
+                white-space: pre-wrap;
+            }
+
+            #virtualKeypad {
+                /* Display is handled by JS based on version now, but layout is set here */
+                /* Initial position for mobile */
+                bottom: 10px;
+                right: 10px; 
+                width: 220px;
+            }
+            
+            .option {
+                padding: 5px; /* Larger hit area */
+                border: 1px solid transparent; /* Visual feedback area */
+            }
+        }
+     </style>
+</head>
+<body>
+    <div class="bios-screen" id="biosScreen">
+        <div class="content" id="content">
+            <div id="updateAlertDisplay" data-i18n="UPDATE_ALERT">*** NEW UPDATE AVAILABLE: GO [4] TO UPDATE ***</div>
+            <div class="info-line" id="safeModeDisplay" data-i18n="SAFE_MODE_ENABLED">*** SAFE MODE ENABLED ***</div>
+            
+            <div class="info-line" id="dateTimeDisplay"></div> 
+            <div class="info-line" data-i18n="PRESS_F2_F12">Press F2 to enter SETUP | Press F12 to select boot device</div>
+
+            <div class="instructions" data-i18n="INSTRUCTIONS_ARROWS">Use arrow keys to control</div>
+
+            <div class="boot-options" id="bootOptionsContainer">
+                <div class="option" id="option1" data-i18n="OPTION_RESTART">[1] Restart</div>
+                <div class="option" id="option2" data-i18n="OPTION_SHUTDOWN">[2] Shut Down</div>
+                <div class="option" id="option3" data-i18n-repair="OPTION_REPAIR" data-i18n-optimize="OPTION_OPTIMIZE">[3] System Repair</div>
+                <div class="option" id="option4" data-i18n-check="OPTION_VERSION_CHECK" data-i18n-disable="OPTION_DISABLE_SAFE_MODE">[4] Version Check</div>
+                <div class="option" id="option5" data-i18n="OPTION_HARDWARE_INFO">[5] Hardware Information Viewer</div>
+                <div class="option" id="option6" data-i18n="OPTION_MEMORY_TEST">[6] Memory Test</div>
+                <div class="option" id="option7" data-i18n="OPTION_SMART_STATUS">[7] Hard Drive SMART Status Viewer</div>
+                <div class="option" id="option8" data-i18n="OPTION_BOOT_ORDER">[8] Boot Order Configuration</div>
+                <div class="option" id="option9" data-i18n="OPTION_ERROR_LOG">[9] Error Code Log</div> 
+                <div class="option" id="option10" data-i18n="OPTION_SETTINGS">[10] Date/Time & Font Settings</div> 
+                <div class="option" id="option11" data-i18n="OPTION_COMMAND">[11] Command</div> 
+                <div class="option" id="option12" data-i18n="OPTION_UPDATE_LOG">[12] Version Update Log</div>
+                <div class="option" id="option13" data-i18n="OPTION_LANGUAGE">[13] Language Selection</div> </div>
+        </div>
+    </div>
+
+    <div id="virtualKeypad">
+        <div class="keypad-header" id="keypadHeader">
+            <span data-i18n="KEYPAD_TITLE">:: INPUT ::</span>
+        </div>
+        <div class="keypad-body">
+            <div class="k-btn" data-key="F2">F2</div>
+            <div class="k-btn" data-key="ArrowUp">▲</div>
+            <div class="k-btn" data-key="F12">F12</div>
+            
+            <div class="k-btn" data-key="ArrowLeft">◄</div>
+            <div class="k-btn" data-key="Enter">ENT</div>
+            <div class="k-btn" data-key="ArrowRight">►</div>
+            
+            <div class="k-btn" data-key="Escape">ESC</div>
+            <div class="k-btn" data-key="ArrowDown">▼</div>
+            <div class="k-btn-spacer"></div>
+        </div>
+    </div>
+    
+    <div id="restartModal">
+        <div class="modal-header" data-i18n="RESTART_PROMPT_TITLE">System Update</div>
+        <div class="modal-body" data-i18n="RESTART_PROMPT_MESSAGE">System successfully updated to v1.0.0. Would you like to restart now to apply changes?</div>
+        <div class="modal-footer">
+            <button id="restartBtn" data-i18n="RESTART_PROMPT_RESTART">Restart</button>
+            <button id="laterBtn" data-i18n="RESTART_PROMPT_LATER">Later</button>
+        </div>
+    </div>
+    
+    <div id="restartAnimationOverlay"></div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+        const bootOptionsContainer = document.getElementById('bootOptionsContainer');
+        let options = document.querySelectorAll('.option'); 
+        const biosScreen = document.getElementById('biosScreen');
+        const content = document.getElementById('content');
+        const updateAlertDisplay = document.getElementById('updateAlertDisplay');
+        let currentIndex = 0;
+        
+        // ----------------------------------------------------
+        // LOCALIZATION DICTIONARY
+        // ----------------------------------------------------
+        
+        const TRANSLATIONS = {
+            'en': {
+                // Main Screen
+                'UPDATE_ALERT': '*** NEW UPDATE AVAILABLE: GO [4] TO UPDATE ***',
+                'SAFE_MODE_ENABLED': '*** SAFE MODE ENABLED ***',
+                'CURRENT_DATETIME': 'Current Date/Time: ',
+                'PRESS_F2_F12': 'Press F2 to enter SETUP | Press F12 to select boot device',
+                'INSTRUCTIONS_ARROWS': 'Use arrow keys to control',
+                'OPTION_RESTART': '[1] Restart',
+                'OPTION_SHUTDOWN': '[2] Shut Down',
+                'OPTION_REPAIR': '[3] System Repair',
+                'OPTION_OPTIMIZE': '[3] System Optimization',
+                'OPTION_VERSION_CHECK': '[4] Version Check',
+                'OPTION_DISABLE_SAFE_MODE': '[4] Disable Safe Mode',
+                'OPTION_HARDWARE_INFO': '[5] Hardware Information Viewer',
+                'OPTION_MEMORY_TEST': '[6] Memory Test',
+                'OPTION_SMART_STATUS': '[7] Hard Drive SMART Status Viewer',
+                'OPTION_BOOT_ORDER': '[8] Boot Order Configuration',
+                'OPTION_ERROR_LOG': '[9] Error Code Log',
+                'OPTION_SETTINGS': '[10] Date/Time & Font Settings',
+                'OPTION_COMMAND': '[11] Command',
+                'OPTION_UPDATE_LOG': '[12] Version Update Log',
+                'OPTION_LANGUAGE': '[13] Language Selection',
+                
+                // Keypad
+                'KEYPAD_TITLE': ':: INPUT ::',
+
+                // General
+                'ENTER_PROCEED': '[Enter] to proceed',
+                'EXIT_ESCAPE': '[Esc] to Exit',
+                'MENU_SELECT_INSTRUCTIONS': 'Use [Up]/[Down] to select, [Enter] to proceed',
+                'CONFIRM_YES_NO': ' (Y/N)',
+                'CONFIRM': 'Confirm',
+                'YES': 'Y',
+                'NO': 'N',
+                
+                // Process Messages
+                'SYSTEM_HALTED': 'System halted. Powering down...',
+                'DISPLAY_OFF': 'Display OFF',
+                'RESTARTING': 'Restarting system...',
+                'PERFORM_CHECK': 'Perform Check/Optimization? (Y/N)',
+                'ANALYZING_FILESYSTEM': 'Analyzing file system... 100% complete.',
+                'SYSTEM_OK': 'System integrity: OK. 0 errors found.',
+                'OPTIMIZATION_COMPLETE': 'Optimization complete. 1.2 GB temporary files cleaned.',
+                'MEM_CHECK_PASS': 'Memory Check: Pass',
+                'SMART_CHECK': 'Hard Drive S.M.A.R.T. Status Check...',
+                'DRIVE_STATUS_OK': 'Drive 1: OK (Temperature: 35C)',
+                'DRIVE_STATUS_OK_2': 'Drive 2: OK (Temperature: 32C)',
+                'LOG_END': 'Log End.',
+                
+                // Sub-menus
+                'SETTINGS_TITLE': 'SYSTEM SETTINGS',
+                'SETTING_DATETIME': '[1] Date and Time Setup',
+                'SETTING_FONT': '[2] Customize Font Size',
+                'SETTING_THEME': '[3] Theme Picker',
+                'SETTING_SAFE_MODE': '[4] Safe Mode Toggle ',
+                'SETTING_ANIMATION': '[5] Disable UI Animations ',
+                'SETTING_RETURN': '[6] Return to Main Menu',
+                
+                // Version Check
+                'VERSION_CHECK_TITLE': 'SYSTEM VERSION CHECK',
+                'CURRENT_INSTALLED_VERSION': 'Current Installed Version: ',
+                'NEW_UPDATE_AVAILABLE': '*** NEW UPDATE AVAILABLE! ***',
+                'SELECT_VERSION_INSTALL': 'Select Version to Install:',
+                'LATEST': ' (Latest)',
+                'CURRENT': ' (Current)',
+                'ALREADY_INSTALLED': 'Version already installed.',
+                'CONFIRM_ACTION': 'Confirm {action} to {version}?',
+                'UPGRADE': 'UPGRADE',
+                'DOWNGRADE': 'DOWNGRADE/CHANGE',
+                'INSTALLATION_INITIATED': 'Installation sequence for {version} initiated...',
+                'COPYING_FILES': 'Copying files... 100%',
+                'UPDATE_SUCCESS': 'System successfully updated to {version}.',
+                'RESTART_REQUIRED': 'Restarting required to apply changes.',
+                'RESTART_PROMPT_TITLE': 'System Update', // NEW
+                'RESTART_PROMPT_MESSAGE': 'System successfully updated to v1.0.0. Would you like to restart now to apply changes?', // NEW
+                'RESTART_PROMPT_RESTART': 'Restart', // NEW
+                'RESTART_PROMPT_LATER': 'Later', // NEW
+                
+                // Language Selection
+                'LANGUAGE_TITLE': 'LANGUAGE SELECTION',
+                'SELECT_LANGUAGE': 'Select a Language:',
+                'LANGUAGE_ENGLISH': '[1] English',
+                'LANGUAGE_CHINESE': '[2] Chinese Simplified',
+                'LANGUAGE_APPLIED': 'Language set to {lang}. Restarting required.',
+
+                // ... everything else
+                'SHUTDOWN_QUESTION': 'Shut down? (Y/N)',
+                'SAFE_MODE_SET': 'Safe Mode set to {status}.',
+                'SAFE_MODE_RESTART': 'Disabling Safe Mode requires a system restart for full effect. Restarting...',
+                'SYSTEM_OPTIMIZATION': 'System Optimization',
+                'SYSTEM_REPAIR': 'System Repair',
+                'FONT_SIZE_TITLE': 'CUSTOMIZE FONT SIZE',
+                'FONT_SIZE_INSTRUCTIONS': 'Use [Up]/[Down] to change value, [Left]/[Right] to select digit, [Enter] to Save, [Esc] to Exit',
+                'FONT_SIZE_LIMIT': 'Limit: 12px - 24px',
+                'CURRENT_FONT_SIZE': 'Current Global Font Size: {size} px',
+                'SET_SIZE': '   SET SIZE: ',
+                'SAVING_CMOS': 'Saving configuration to CMOS...',
+                'FONT_SIZE_SAVED': 'Font size saved and applied.',
+                'DATETIME_TITLE': 'CMOS DATE & TIME SETUP',
+                'DATETIME_INSTRUCTIONS': 'Use [Up]/[Down] to change value, [Left]/[Right] to select field, [Enter] to Save, [Esc] to Exit',
+                'FIELD_MONTH': 'Month',
+                'FIELD_DAY': 'Day',
+                'FIELD_YEAR': 'Year',
+                'FIELD_HOUR': 'Hour',
+                'FIELD_MINUTE': 'Minute',
+                'FIELD_SECOND': 'Second',
+                'CURRENT_TIME_DATE': 'Current Time: {time} | Date: {date}',
+                'SAVING_DATETIME': 'Saving system date and time...',
+                'SETUP_COMPLETE': 'Setup complete.',
+                'THEME_TITLE': 'THEME PICKER',
+                'CURRENT_THEME': 'Current Theme: ',
+                'THEME_INSTRUCTIONS': 'Use [Up]/[Down] to select, [Enter] to Apply, [Esc] to Exit',
+                'THEME_SET': 'Theme set to {theme}.',
+                'ANIMATION_SET': 'UI Animations set to {status}.',
+                'HARDWARE_TITLE': 'HARDWARE DETECTION & DIAGNOSTICS',
+                'HARDWARE_DETECTING': 'Attempting real-time hardware detection (3 seconds)...',
+                'DETECTION_SUCCESS': 'Detection successful.',
+                'DETECTION_FAILED': 'Detection failed. Skipping hardware display.',
+                'SECTION_SYSTEM_INFO': 'SYSTEM INFO',
+                'SECTION_CPU': 'CPU',
+                'SECTION_RAM': 'RAM',
+                'SECTION_GPU': 'GPU',
+                'SECTION_STORAGE': 'STORAGE',
+                'SECTION_NETWORK': 'NETWORK',
+                'SECTION_AUDIO': 'AUDIO',
+                'COMMAND_SETTING_UP': 'Command Setting Up...',
+                'COMMAND_ENTER': 'Enter Command (Type "/help" for command list)',
+                'COMMAND_EXECUTING': 'Executing: {command} ({description})',
+                'COMMAND_ERROR': 'Error: Unknown command "{command}"',
+                'COMMAND_NO_ENTRY': 'No command entered.',
+                'COMMAND_HELP_TITLE': 'COMMAND HELP',
+                'COMMAND_HELP_1': '/help        - Show this help menu.',
+                'COMMAND_HELP_2': 'check_version - Check system version (legacy).',
+                'COMMAND_HELP_3': 'sy_repair    - Run [3] System Repair/Optimization.',
+                'COMMAND_HELP_4': 'sy_update    - Run [4] Version Check (and Upgrade prompt).',
+                'COMMAND_HELP_5': 'sy_vdg       - Alias for sy_update.',
+                'COMMAND_HELP_6': 'sy_vdg_002   - Downgrade system to v0.02a (restarts).',
+                'COMMAND_HELP_7': 'sy_restart   - Initiate system restart.',
+                'COMMAND_HELP_8': 'sy_shutd     - Initiate system shut down.',
+                'COMMAND_HELP_9': 'exit         - Quit Command page, [Enter]To proceed.',
+                'COMMAND_EXIT': 'Exiting Command Prompt. [Enter] to proceed',
+                'COMMAND_DOWNGRADE_CONFIRM': 'Confirm immediate Downgrade to v0.02a? (Y/N)',
+                'BOOT_ORDER_TITLE': 'Boot Order Configuration:',
+                'BOOT_ORDER_SAVE': 'Press F10 to Save & Exit',
+                'ERROR_LOG_TITLE': 'Error Code Log:',
+                'UPDATE_LOG_TITLE': 'VERSION UPDATE LOG',
+                'UPDATE_LOG_SELECT': 'Select a version to view details:',
+                'UPDATE_LOG_INSTRUCTIONS': 'Use [Up]/[Down] to select, [Enter] to View, [Esc] to Exit',
+                'CHANGELOG_TITLE': 'CHANGELOG FOR {version}',
+                'CHANGELOG_NO_DATA': 'No data available.',
+                'CHANGELOG_RETURN': 'Press [Esc] or [Enter] to return to list'
+            },
+            'zh-CN': {
+                // Main Screen (Simplified Chinese Translation)
+                'UPDATE_ALERT': '*** 有新更新可用：按 [4] 进行更新 ***',
+                'SAFE_MODE_ENABLED': '*** 安全模式已启用 ***',
+                'CURRENT_DATETIME': '当前日期/时间: ',
+                'PRESS_F2_F12': '按 F2 进入设置 | 按 F12 选择启动设备',
+                'INSTRUCTIONS_ARROWS': '使用方向键操作',
+                'OPTION_RESTART': '[1] 重启',
+                'OPTION_SHUTDOWN': '[2] 关机',
+                'OPTION_REPAIR': '[3] 系统修复',
+                'OPTION_OPTIMIZE': '[3] 系统优化',
+                'OPTION_VERSION_CHECK': '[4] 版本检查',
+                'OPTION_DISABLE_SAFE_MODE': '[4] 禁用安全模式',
+                'OPTION_HARDWARE_INFO': '[5] 硬件信息查看器',
+                'OPTION_MEMORY_TEST': '[6] 内存测试',
+                'OPTION_SMART_STATUS': '[7] 硬盘 SMART 状态查看器',
+                'OPTION_BOOT_ORDER': '[8] 启动顺序配置',
+                'OPTION_ERROR_LOG': '[9] 错误代码日志',
+                'OPTION_SETTINGS': '[10] 日期/时间与字体设置',
+                'OPTION_COMMAND': '[11] 命令',
+                'OPTION_UPDATE_LOG': '[12] 版本更新日志',
+                'OPTION_LANGUAGE': '[13] 语言选择',
+
+                // Keypad
+                'KEYPAD_TITLE': ':: 输入 ::',
+                
+                // General
+                'ENTER_PROCEED': '按 [Enter] 继续',
+                'EXIT_ESCAPE': '按 [Esc] 退出',
+                'MENU_SELECT_INSTRUCTIONS': '使用 [上]/[下] 选择, 按 [Enter] 继续',
+                'CONFIRM_YES_NO': ' (是/否)',
+                'CONFIRM': '确认',
+                'YES': '是',
+                'NO': '否',
+                
+                // Process Messages
+                'SYSTEM_HALTED': '系统已停止。正在关闭电源...',
+                'DISPLAY_OFF': '显示器关闭',
+                'RESTARTING': '正在重启系统...',
+                'PERFORM_CHECK': '执行检查/优化? (是/否)',
+                'ANALYZING_FILESYSTEM': '正在分析文件系统... 100% 完成。',
+                'SYSTEM_OK': '系统完整性: 正常。未发现错误。',
+                'OPTIMIZATION_COMPLETE': '优化完成。已清理 1.2 GB 临时文件。',
+                'MEM_CHECK_PASS': '内存检查: 通过',
+                'SMART_CHECK': '正在检查硬盘 S.M.A.R.T. 状态...',
+                'DRIVE_STATUS_OK': '驱动器 1: 正常 (温度: 35C)',
+                'DRIVE_STATUS_OK_2': '驱动器 2: 正常 (温度: 32C)',
+                'LOG_END': '日志结束。',
+
+                // Sub-menus
+                'SETTINGS_TITLE': '系统设置',
+                'SETTING_DATETIME': '[1] 日期和时间设置',
+                'SETTING_FONT': '[2] 自定义字体大小',
+                'SETTING_THEME': '[3] 主题选择器',
+                'SETTING_SAFE_MODE': '[4] 安全模式开关 ',
+                'SETTING_ANIMATION': '[5] 禁用 UI 动画 ',
+                'SETTING_RETURN': '[6] 返回主菜单',
+                
+                // Version Check
+                'VERSION_CHECK_TITLE': '系统版本检查',
+                'CURRENT_INSTALLED_VERSION': '当前已安装版本: ',
+                'NEW_UPDATE_AVAILABLE': '*** 有新更新可用！ ***',
+                'SELECT_VERSION_INSTALL': '选择要安装的版本:',
+                'LATEST': ' (最新)',
+                'CURRENT': ' (当前)',
+                'ALREADY_INSTALLED': '该版本已安装。',
+                'CONFIRM_ACTION': '确认{version}的{action}操作?',
+                'UPGRADE': '升级',
+                'DOWNGRADE': '降级/更改',
+                'INSTALLATION_INITIATED': '正在启动 {version} 的安装序列...',
+                'COPYING_FILES': '正在复制文件... 100%',
+                'UPDATE_SUCCESS': '系统已成功更新到 {version}。',
+                'RESTART_REQUIRED': '需要重启以应用更改。',
+                'RESTART_PROMPT_TITLE': '系统更新', // NEW
+                'RESTART_PROMPT_MESSAGE': '系统已成功更新到 v1.0.0。您想现在重启以应用更改吗？', // NEW
+                'RESTART_PROMPT_RESTART': '重启', // NEW
+                'RESTART_PROMPT_LATER': '稍后', // NEW
+                
+                // Language Selection
+                'LANGUAGE_TITLE': '语言选择',
+                'SELECT_LANGUAGE': '选择语言:',
+                'LANGUAGE_ENGLISH': '[1] 英语',
+                'LANGUAGE_CHINESE': '[2] 简体中文',
+                'LANGUAGE_APPLIED': '语言已设置为 {lang}。需要重启。',
+
+                // ... everything else
+                'SHUTDOWN_QUESTION': '关机? (是/否)',
+                'SAFE_MODE_SET': '安全模式设置为 {status}。',
+                'SAFE_MODE_RESTART': '禁用安全模式需要系统重启才能完全生效。正在重启...',
+                'SYSTEM_OPTIMIZATION': '系统优化',
+                'SYSTEM_REPAIR': '系统修复',
+                'FONT_SIZE_TITLE': '自定义字体大小',
+                'FONT_SIZE_INSTRUCTIONS': '使用 [上]/[下] 更改值, [左]/[右] 选择数字, 按 [Enter] 保存, [Esc] 退出',
+                'FONT_SIZE_LIMIT': '限制: 12px - 24px',
+                'CURRENT_FONT_SIZE': '当前全局字体大小: {size} px',
+                'SET_SIZE': '   设置大小: ',
+                'SAVING_CMOS': '正在保存配置到 CMOS...',
+                'FONT_SIZE_SAVED': '字体大小已保存并应用。',
+                'DATETIME_TITLE': 'CMOS 日期和时间设置',
+                'DATETIME_INSTRUCTIONS': '使用 [上]/[下] 更改值, [左]/[右] 选择字段, 按 [Enter] 保存, [Esc] 退出',
+                'FIELD_MONTH': '月',
+                'FIELD_DAY': '日',
+                'FIELD_YEAR': '年',
+                'FIELD_HOUR': '时',
+                'FIELD_MINUTE': '分',
+                'FIELD_SECOND': '秒',
+                'CURRENT_TIME_DATE': '当前时间: {time} | 日期: {date}',
+                'SAVING_DATETIME': '正在保存系统日期和时间...',
+                'SETUP_COMPLETE': '设置完成。',
+                'THEME_TITLE': '主题选择器',
+                'CURRENT_THEME': '当前主题: ',
+                'THEME_INSTRUCTIONS': '使用 [上]/[下] 选择, 按 [Enter] 应用, [Esc] 退出',
+                'THEME_SET': '主题已设置为 {theme}。',
+                'ANIMATION_SET': 'UI 动画设置为 {status}。',
+                'HARDWARE_TITLE': '硬件检测与诊断',
+                'HARDWARE_DETECTING': '正在尝试实时硬件检测 (3 秒)...',
+                'DETECTION_SUCCESS': '检测成功。',
+                'DETECTION_FAILED': '检测失败。跳过硬件显示。',
+                'SECTION_SYSTEM_INFO': '系统信息',
+                'SECTION_CPU': 'CPU',
+                'SECTION_RAM': '内存',
+                'SECTION_GPU': '显卡',
+                'SECTION_STORAGE': '存储',
+                'SECTION_NETWORK': '网络',
+                'SECTION_AUDIO': '音频',
+                'COMMAND_SETTING_UP': '命令设置中...',
+                'COMMAND_ENTER': '输入命令 (输入 "/help" 查看命令列表)',
+                'COMMAND_EXECUTING': '正在执行: {command} ({description})',
+                'COMMAND_ERROR': '错误: 未知命令 "{command}"',
+                'COMMAND_NO_ENTRY': '未输入命令。',
+                'COMMAND_HELP_TITLE': '命令帮助',
+                'COMMAND_HELP_1': '/help        - 显示此帮助菜单。',
+                'COMMAND_HELP_2': 'check_version - 检查系统版本 (传统)。',
+                'COMMAND_HELP_3': 'sy_repair    - 运行 [3] 系统修复/优化。',
+                'COMMAND_HELP_4': 'sy_update    - 运行 [4] 版本检查 (和升级提示)。',
+                'COMMAND_HELP_5': 'sy_vdg       - sy_update 的别名。',
+                'COMMAND_HELP_6': 'sy_vdg_002   - 将系统降级到 v0.02a (重启)。',
+                'COMMAND_HELP_7': 'sy_restart   - 启动系统重启。',
+                'COMMAND_HELP_8': 'sy_shutd     - 启动系统关机。',
+                'COMMAND_HELP_9': 'exit         - 退出命令页面, 按 [Enter] 继续。',
+                'COMMAND_EXIT': '正在退出命令提示符。按 [Enter] 继续',
+                'COMMAND_DOWNGRADE_CONFIRM': '确认立即降级到 v0.02a? (是/否)',
+                'BOOT_ORDER_TITLE': '启动顺序配置:',
+                'BOOT_ORDER_SAVE': '按 F10 保存并退出',
+                'ERROR_LOG_TITLE': '错误代码日志:',
+                'UPDATE_LOG_TITLE': '版本更新日志',
+                'UPDATE_LOG_SELECT': '选择版本以查看详情:',
+                'UPDATE_LOG_INSTRUCTIONS': '使用 [上]/[下] 选择, 按 [Enter] 查看, [Esc] 退出',
+                'CHANGELOG_TITLE': '{version} 的更改日志',
+                'CHANGELOG_NO_DATA': '暂无数据。',
+                'CHANGELOG_RETURN': '按 [Esc] 或 [Enter] 返回列表'
+            }
+        };
+
+        let currentLanguage = localStorage.getItem('systemLanguage') || 'en';
+        
+        function T(key, replacements = {}) {
+            const langDict = TRANSLATIONS[currentLanguage] || TRANSLATIONS['en'];
+            let text = langDict[key] || TRANSLATIONS['en'][key] || `[MISSING_TRANSLATION:${key}]`;
+            
+            for (const [placeholder, value] of Object.entries(replacements)) {
+                // Handle complex replacements like {action} or {version}
+                text = text.replace(new RegExp(`\\{${placeholder}\\}`, 'g'), value);
+            }
+            return text;
+        }
+
+        // ----------------------------------------------------
+        // UI REFRESH AND I18N
+        // ----------------------------------------------------
+
+        function updateUIPhrases() {
+            // Static elements with data-i18n attribute
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (key) {
+                    el.textContent = T(key);
+                }
+            });
+            
+            // Dynamic elements (like option3 and option4 which change based on safe mode)
+            updateOptionStatus(); 
+            
+            // Keypad header
+            document.getElementById('keypadHeader').querySelector('span').textContent = T('KEYPAD_TITLE');
+        }
+
+
+        // ----------------------------------------------------
+        // STATE MANAGEMENT & LOCAL STORAGE
+        // ----------------------------------------------------
+        const MIN_FONT_SIZE = 12;
+        const MAX_FONT_SIZE = 24;
+        
+        // Version constants
+        const LATEST_VERSION = 'v1.0.0'; // Updated to v1.0.0 Release
+        const PREVIOUS_VERSION = 'v0.17a'; // Now the previous major version
+        const OLD_PREVIOUS_VERSION = 'v0.16a'; // Added for the version list
+        const LEGACY_VERSION = 'v0.02a';
+        const ABANDONED_VERSION = 'v0.01b'; 
+
+        // ChangeLog Data
+        const CHANGE_LOGS = {
+            'v1.0.0': ['- v1.0 Release: New core engine', '- Enhanced stability and performance', '- Updated default font to Inter'], // New Changelog
+            'v0.17a': [T('OPTION_LANGUAGE', {}, 'en') + T('OPTION_LANGUAGE', {}, 'zh-CN') + '- Added keypad for mobile/tablet user', '- Added responsive design'],
+            'v0.16a': ['- Added [11] Command section', '- Added Safe Mode'],
+            'v0.02a': ['- No update information'],
+            'v0.01b': ['- No update information']
+        };
+        
+        // Theme definitions
+        const THEMES = {
+            GREEN: { primary: '#0f0', highlight: '#006400', title: 'GREEN', keypadBg: '#003300', keypadBorder: '#0f0' },
+            DEEP_BLUE: { primary: '#00BFFF', highlight: '#00008B', title: 'DEEP BLUE', keypadBg: '#000044', keypadBorder: '#00BFFF' },
+            RED: { primary: '#FF4500', highlight: '#8B0000', title: 'RED', keypadBg: '#330000', keypadBorder: '#FF4500' }
+        };
+
+        // Load states from localStorage
+        // DEFAULT TO PREVIOUS VERSION (v0.17a) IF NO SAVE FOUND to simulate update process
+        let currentVersion = localStorage.getItem('systemVersion') || PREVIOUS_VERSION;
+        
+        let currentFontSize = parseInt(localStorage.getItem('customFontSize')) || 16;
+        let dateTimestamp = parseInt(localStorage.getItem('systemDateTimestamp'));
+        let currentDate = dateTimestamp ? new Date(dateTimestamp) : new Date(); 
+        
+        let currentTheme = localStorage.getItem('systemTheme') || 'DEEP_BLUE'; 
+        let isSafeMode = localStorage.getItem('isSafeMode') === 'true'; 
+        // Animation state
+        let disableAnimations = localStorage.getItem('disableAnimations') === 'true'; 
+
+        const dateTimeDisplay = document.getElementById('dateTimeDisplay');
+        
+        // Apply Inter font if v1.0.0 is installed
+        if (currentVersion === LATEST_VERSION) {
+             document.body.classList.add('font-inter');
+        } else {
+             document.body.classList.remove('font-inter');
+        }
+
+        // ----------------------------------------------------
+        // CORE UTILITIES (TIME, FONT, UI, THEME, SAFEMODE, SCROLL)
+        // ----------------------------------------------------
+
+        function pad(num) { return num.toString().padStart(2, '0'); }
+        
+        function updateDateTimeDisplay() {
+            const month = pad(currentDate.getMonth() + 1);
+            const day = pad(currentDate.getDate());
+            const year = currentDate.getFullYear();
+            const hour = pad(currentDate.getHours());
+            const minute = pad(currentDate.getMinutes());
+            const second = pad(currentDate.getSeconds());
+
+            const dateStr = `${month}/${day}/${year}`;
+            const timeStr = `${hour}:${minute}:${second}`;
+            
+            dateTimeDisplay.textContent = `${T('CURRENT_DATETIME')} ${dateStr.padEnd(10, ' ')} ${timeStr.padEnd(8, ' ')}`;
+        }
+
+        let timeUpdateInterval;
+        function startLiveTimeUpdate() {
+            if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+
+            timeUpdateInterval = setInterval(() => {
+                if (content.style.display !== 'none') {
+                    currentDate.setSeconds(currentDate.getSeconds() + 1);
+                    updateDateTimeDisplay();
+                    localStorage.setItem('systemDateTimestamp', currentDate.getTime());
+                }
+            }, 1000);
+        }
+
+        function applyFontSize(size) {
+            document.body.style.fontSize = `${size}px`;
+        }
+        
+        // Theme Application
+        function applyTheme(themeKey) {
+            const theme = THEMES[themeKey];
+            if (!theme) return;
+            
+            currentTheme = themeKey;
+            localStorage.setItem('systemTheme', themeKey);
+
+            document.documentElement.style.setProperty('--primary-color', theme.primary);
+            document.documentElement.style.setProperty('--highlight-bg', theme.highlight);
+            
+            // Apply keypad theme vars if they exist
+            if(theme.keypadBg) document.documentElement.style.setProperty('--keypad-bg', theme.keypadBg);
+            if(theme.keypadBorder) document.documentElement.style.setProperty('--keypad-border', theme.keypadBorder);
+
+            highlightOption(currentIndex); // Re-apply highlight
+        }
+        
+        // Function to apply/remove instant mode class
+        function applyInstantMode(isInstant) {
+            if (isInstant) {
+                document.body.classList.add('instant-mode');
+            } else {
+                document.body.classList.remove('instant-mode');
+            }
+        }
+        
+        // Feature Toggles based on Version function
+        function applyVersionFeatures() {
+            const keypad = document.getElementById('virtualKeypad');
+            // Feature: Keypad only in v0.17a+ (which is PREVIOUS_VERSION or LATEST_VERSION)
+            if (currentVersion === LATEST_VERSION || currentVersion === PREVIOUS_VERSION) { 
+                // If on mobile/tablet width, show keypad. Otherwise hide (but keep in DOM)
+                // The media query in CSS handles the automatic display for mobile.
+                // We just ensure it's not hidden by "display: none" override from older versions
+                keypad.style.display = ''; // Force check media query logic manually if needed, or rely on CSS 
+                if (window.innerWidth <= 768) {
+                    keypad.style.display = 'flex';
+                }
+            } else { 
+                // Hide keypad for older versions to simulate "old feature set"
+                keypad.style.display = 'none';
+            }
+        }
+
+        // Handle window resize for dynamic keypad visibility
+        window.addEventListener('resize', () => { 
+            if (currentVersion === LATEST_VERSION || currentVersion === PREVIOUS_VERSION) {
+                const keypad = document.getElementById('virtualKeypad');
+                if (window.innerWidth <= 768) {
+                     keypad.style.display = 'flex';
+                } else {
+                     keypad.style.display = '';
+                     // Since we allow desktop dragging, we don't hide on desktop, 
+                     // we just let the default 'none' or drag positioning take over.
+                }
+            }
+        });
+        
+        // ----------------------------------------------------
+        // SAFEMODE AND OPTIONS UI
+        // ----------------------------------------------------
+
+        function updateOptionStatus() {
+            // Check if current version is too old to display language option (13)
+            const isVeryOldVersion = currentVersion === LEGACY_VERSION || currentVersion === ABANDONED_VERSION;
+            const safeModeDisplay = document.getElementById('safeModeDisplay');
+            const option3Element = document.getElementById(`option3`);
+            const option4Element = document.getElementById(`option4`);
+            const option13Element = document.getElementById(`option13`);
+
+            // Safe Mode Label visibility
+            safeModeDisplay.style.display = isSafeMode ? 'block' : 'none';
+            safeModeDisplay.textContent = T('SAFE_MODE_ENABLED');
+
+            // Update Alert Visibility
+            if (currentVersion !== LATEST_VERSION) {
+                updateAlertDisplay.style.display = 'block';
+                updateAlertDisplay.textContent = T('UPDATE_ALERT');
+            } else {
+                updateAlertDisplay.style.display = 'none';
+            }
+            
+            // Set Option 3 & 4 text dynamically
+            if (option3Element) {
+                option3Element.textContent = isSafeMode ? T('OPTION_OPTIMIZE') : T('OPTION_REPAIR');
+            }
+            if (option4Element) {
+                option4Element.textContent = isSafeMode ? T('OPTION_DISABLE_SAFE_MODE') : T('OPTION_VERSION_CHECK');
+            }
+
+            // Update all standard options based on current language
+            for (let i = 1; i <= 13; i++) {
+                const optionElement = document.getElementById(`option${i}`);
+                if (!optionElement) continue;
+
+                // Update text for i18n
+                if (i === 3) {
+                    optionElement.textContent = isSafeMode ? T('OPTION_OPTIMIZE') : T('OPTION_REPAIR');
+                } else if (i === 4) {
+                    optionElement.textContent = isSafeMode ? T('OPTION_DISABLE_SAFE_MODE') : T('OPTION_VERSION_CHECK');
+                } else if (optionElement.getAttribute('data-i18n')) {
+                    optionElement.textContent = T(optionElement.getAttribute('data-i18n'));
+                }
+
+                let shouldDisplay = true;
+                if (isSafeMode) {
+                    // Safe Mode only shows 1, 2, 3, 4, and 13 (Language must remain accessible)
+                    if (i !== 1 && i !== 2 && i !== 3 && i !== 4 && i !== 13) {
+                        shouldDisplay = false;
+                    }
+                }
+                
+                // Hide Language option in very old versions (i < v0.17a)
+                if (i === 13 && isVeryOldVersion) {
+                    shouldDisplay = false;
+                }
+                
+                // Hide Command, Update Log in older versions (i < v0.16a)
+                 if ( (i === 11 || i === 12) && currentVersion === LEGACY_VERSION || currentVersion === ABANDONED_VERSION) {
+                    shouldDisplay = false;
+                }
+
+                optionElement.style.display = shouldDisplay ? 'block' : 'none';
+            }
+            
+            // Re-select options list after visibility changes
+            options = document.querySelectorAll('.option:not([style*="display: none"])');
+            
+            // Recalculate currentIndex if the previously selected one is now hidden
+            if (currentIndex >= options.length) {
+                currentIndex = Math.max(0, options.length - 1);
+            }
+            highlightOption(currentIndex);
+        }
+        
+        function highlightOption(index) {
+            options.forEach((option, i) => {
+                option.classList.toggle('highlight', i === index);
+            });
+            // Ensure selected option is visible
+            if (options[index]) {
+                options[index].scrollIntoView({ behavior: 'auto', block: 'nearest' });
+            }
+        }
+        
+        // ----------------------------------------------------
+        // INITIALIZATION AND MAIN LOOP
+        // ----------------------------------------------------
+
+        // Apply theme, font size, and version features on load
+        applyTheme(currentTheme); 
+        applyFontSize(currentFontSize);
+        applyInstantMode(disableAnimations);
+        applyVersionFeatures();
+
+        // Run initial UI updates
+        updateUIPhrases(); // Includes updateOptionStatus()
+        startLiveTimeUpdate();
+        highlightOption(currentIndex);
+        
+        // Setup keypad dragging and button actions (omitted for brevity, as it's intact)
+        // ... (Keypad drag logic remains here)
+        const keypad = document.getElementById('virtualKeypad');
+        const keypadHeader = document.getElementById('keypadHeader');
+        let isDragging = false;
+        let dragOffsetX, dragOffsetY;
+
+        keypadHeader.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            isDragging = true;
+            dragOffsetX = e.clientX - keypad.getBoundingClientRect().left;
+            dragOffsetY = e.clientY - keypad.getBoundingClientRect().top;
+            keypad.style.cursor = 'grabbing';
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                e.preventDefault();
+                let x = e.clientX - dragOffsetX;
+                let y = e.clientY - dragOffsetY;
+                // Boundary checks
+                const maxX = window.innerWidth - keypad.offsetWidth;
+                const maxY = window.innerHeight - keypad.offsetHeight;
+                x = Math.max(0, Math.min(x, maxX));
+                y = Math.max(0, Math.min(y, maxY));
+                keypad.style.left = x + 'px';
+                keypad.style.top = y + 'px';
+                keypad.style.bottom = 'auto'; // Disable bottom once dragged
+                keypad.style.right = 'auto'; // Disable right once dragged
+            }
+        });
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            keypad.style.cursor = 'default';
+        });
+        // Touch Dragging
+        keypadHeader.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            const touch = e.touches[0];
+            const rect = keypad.getBoundingClientRect();
+            dragOffsetX = touch.clientX - rect.left;
+            dragOffsetY = touch.clientY - rect.top;
+        }, {passive: false});
+        document.addEventListener('touchmove', (e) => {
+            if (isDragging) {
+                e.preventDefault(); // Prevent scrolling while dragging
+                const touch = e.touches[0];
+                let x = touch.clientX - dragOffsetX;
+                let y = touch.clientY - dragOffsetY;
+                // Boundary checks
+                const maxX = window.innerWidth - keypad.offsetWidth;
+                const maxY = window.innerHeight - keypad.offsetHeight;
+                x = Math.max(0, Math.min(x, maxX));
+                y = Math.max(0, Math.min(y, maxY));
+                keypad.style.left = x + 'px';
+                keypad.style.top = y + 'px';
+                keypad.style.bottom = 'auto';
+                keypad.style.right = 'auto';
+            }
+        }, {passive: false});
+        document.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+        // Keypad Button Interaction
+        const kBtns = document.querySelectorAll('.k-btn');
+        kBtns.forEach(btn => {
+            // Function to simulate keydown
+            const simulateKeydown = (key) => {
+                 document.dispatchEvent(new KeyboardEvent('keydown', { 'key': key }));
+            };
+            
+            // Touch/Click Start
+            btn.addEventListener('mousedown', (e) => {
+                 e.preventDefault();
+                 btn.classList.add('active');
+            });
+            btn.addEventListener('touchstart', (e) => {
+                 e.preventDefault();
+                 btn.classList.add('active');
+            }, {passive: false});
+            
+            // Touch/Click End
+            const key = btn.getAttribute('data-key');
+            const releaseHandler = (e) => {
+                e.preventDefault();
+                btn.classList.remove('active');
+                // Simulate the key press on release
+                simulateKeydown(key);
+            };
+            btn.addEventListener('mouseup', releaseHandler);
+            btn.addEventListener('touchend', releaseHandler);
+            btn.addEventListener('mouseleave', () => { btn.classList.remove('active'); }); // Release highlight on mouse leave
+        });
+        
+        // ----------------------------------------------------
+        // KEYBOARD HANDLERS AND SCREEN MANAGEMENT
+        // ----------------------------------------------------
+
+        function mainKeyHandler(e) {
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                currentIndex = (currentIndex - 1 + options.length) % options.length;
+                highlightOption(currentIndex);
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                currentIndex = (currentIndex + 1) % options.length;
+                highlightOption(currentIndex);
+            } else if (e.key === 'F2') {
+                e.preventDefault();
+                // Replace alert with dynamic message box if needed, for now stick to previous implementation
+                alert('Entering BIOS setup');
+            } else if (e.key === 'F12') {
+                e.preventDefault();
+                alert('Selecting boot device');
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                handleOption(currentIndex);
+            }
+        }
+
+        document.addEventListener('keydown', mainKeyHandler);
+
+        function returnToMainMenu() {
+            document.removeEventListener('keydown', mainKeyHandler);
+            document.addEventListener('keydown', mainKeyHandler);
+            const children = Array.from(biosScreen.children);
+            children.forEach(child => {
+                if (child.id !== 'content') {
+                    biosScreen.removeChild(child);
+                }
+            });
+            content.style.display = 'block';
+            setTimeout(() => {
+                content.classList.remove('fade-out');
+            }, disableAnimations ? 0 : 50); // Instant if animations disabled
+            updateUIPhrases(); // Refresh all text for current language
+            startLiveTimeUpdate();
+        }
+
+        function showProceedPrompt() {
+            showTypingText(T('ENTER_PROCEED'), () => {
+                document.addEventListener('keydown', function proceedHandler(e) {
+                    if (e.key === 'Enter') {
+                        document.removeEventListener('keydown', proceedHandler);
+                        returnToMainMenu();
+                    }
+                });
+            });
+        }
+
+        // Instant transition if animations disabled
+        function fadeOutScreen(callback) {
+            if (disableAnimations) {
+                if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+                document.removeEventListener('keydown', mainKeyHandler);
+                content.classList.remove('fade-out'); // Ensure removal for next time
+                content.style.display = 'none';
+                const childNodes = biosScreen.childNodes;
+                for (let i = childNodes.length - 1; i >= 0; i--) {
+                    if (childNodes[i] !== content) {
+                        biosScreen.removeChild(childNodes[i]);
+                    }
+                }
+                callback();
+                return;
+            }
+
+            // Existing fade logic
+            content.classList.add('fade-out');
+            if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+            document.removeEventListener('keydown', mainKeyHandler);
+            setTimeout(() => {
+                content.style.display = 'none';
+                const childNodes = biosScreen.childNodes;
+                for (let i = childNodes.length - 1; i >= 0; i--) {
+                    if (childNodes[i] !== content) {
+                        biosScreen.removeChild(childNodes[i]);
+                    }
+                }
+                content.classList.remove('fade-out');
+                callback();
+            }, 550); // Match CSS transition time
+        }
+
+        function showLine(text, className = '') {
+            const lineContainer = document.createElement('div');
+            lineContainer.className = 'info-line ' + className;
+            lineContainer.textContent = text;
+            biosScreen.appendChild(lineContainer);
+            
+            // Auto-scroll logic for sub-menus
+            if (content.style.display === 'none') {
+                 lineContainer.scrollIntoView({ behavior: 'auto', block: 'end' });
+            }
+
+            return lineContainer;
+        }
+
+        function showTypingText(text, callback, className = '') {
+            const lineContainer = document.createElement('div');
+            lineContainer.className = 'info-line ' + className;
+            
+            // Use a span inside the div for the typing animation effect
+            const textElement = document.createElement('span');
+            textElement.className = disableAnimations ? 'typing done' : 'typing';
+            textElement.textContent = text;
+            
+            lineContainer.appendChild(textElement);
+            biosScreen.appendChild(lineContainer);
+            
+            if (disableAnimations) {
+                textElement.style.width = '100%';
+                // The pseudo-element cursor must be forcibly disabled 
+                // as it doesn't always apply to dynamically created elements immediately
+                textElement.style.setProperty('content', 'none', 'important');
+                if (callback) callback();
+                // Auto-scroll logic after typing is done for sub-menus
+                if (content.style.display === 'none') {
+                    lineContainer.scrollIntoView({ behavior: 'auto', block: 'end' });
+                }
+                return lineContainer;
+            }
+            
+            // Existing typing logic
+            textElement.offsetHeight;
+            const duration = text.length * 40;
+            textElement.style.transition = `width ${duration}ms steps(${text.length}, end)`;
+            textElement.style.width = '100%';
+            setTimeout(() => {
+                textElement.style.transition = 'none';
+                textElement.classList.add('done');
+                if (callback) callback();
+                // Auto-scroll logic after typing is done for sub-menus
+                if (content.style.display === 'none') {
+                    lineContainer.scrollIntoView({ behavior: 'auto', block: 'end' });
+                }
+            }, duration + 50);
+            return lineContainer;
+        }
+
+        // Helper for Countdown (Instant if disabled)
+        function showCountdown(seconds, callback) {
+            if (disableAnimations) {
+                showLine(`Countdown: ${seconds}`);
+                showLine(`Countdown: 0`);
+                callback();
+                return;
+            }
+            const countdownLine = showLine(`Countdown: ${seconds}`);
+            let count = seconds;
+            const interval = setInterval(() => {
+                count--;
+                countdownLine.textContent = `Countdown: ${count}`;
+                if (count <= 0) {
+                    clearInterval(interval);
+                    biosScreen.removeChild(countdownLine);
+                    callback();
+                }
+            }, 1000);
+        }
+        
+        // ----------------------------------------------------
+        // VERSION INSTALLATION LOGIC (UPDATED)
+        // ----------------------------------------------------
+        
+        function installVersion(version) {
+            currentVersion = version;
+            localStorage.setItem('systemVersion', version);
+            
+            // Update global font class immediately if LATEST_VERSION is installed
+            if (version === LATEST_VERSION) {
+                 document.body.classList.add('font-inter');
+            } else {
+                 document.body.classList.remove('font-inter');
+            }
+
+            // Start installation sequence
+            showLine('');
+            showTypingText(T('INSTALLATION_INITIATED', { version: version }), () => {
+                setTimeout(() => {
+                    showTypingText(T('COPYING_FILES'), () => {
+                        showLine('');
+                        
+                        if (version === LATEST_VERSION) {
+                            showLine(T('UPDATE_SUCCESS', { version: version }), 'text-green');
+                            setTimeout(showRestartPrompt, disableAnimations ? 50 : 1000); // NEW: Show restart prompt for v1.0.0
+                        } else {
+                            // Old logic for other versions
+                            showLine(T('UPDATE_SUCCESS', { version: version }), 'text-green');
+                            showTypingText(T('RESTART_REQUIRED'), () => {
+                                setTimeout(() => {
+                                    showCountdown(3, () => {
+                                        location.reload();
+                                    });
+                                }, disableAnimations ? 50 : 1000);
+                            }, 'text-red');
+                        }
+                    });
+                }, disableAnimations ? 50 : 2000); // Copying delay
+            }, 'text-blue');
+        }
+        
+        // ----------------------------------------------------
+        // NEW: SPECIAL RESTART PROMPT AND ANIMATION
+        // ----------------------------------------------------
+        
+        function showRestartPrompt() {
+            const modal = document.getElementById('restartModal');
+            const restartBtn = document.getElementById('restartBtn');
+            const laterBtn = document.getElementById('laterBtn');
+
+            // Clear screen and show modal
+            const childNodes = biosScreen.childNodes;
+            for (let i = childNodes.length - 1; i >= 0; i--) {
+                if (childNodes[i] !== content) {
+                    biosScreen.removeChild(childNodes[i]);
+                }
+            }
+            
+            modal.style.display = 'block';
+
+            // Update modal text 
+            modal.querySelector('.modal-header').textContent = T('RESTART_PROMPT_TITLE');
+            modal.querySelector('.modal-body').textContent = T('RESTART_PROMPT_MESSAGE');
+            restartBtn.textContent = T('RESTART_PROMPT_RESTART');
+            laterBtn.textContent = T('RESTART_PROMPT_LATER');
+
+            // Remove old listeners to prevent stacking and re-add them
+            restartBtn.replaceWith(restartBtn.cloneNode(true));
+            laterBtn.replaceWith(laterBtn.cloneNode(true));
+            const newRestartBtn = document.getElementById('restartBtn');
+            const newLaterBtn = document.getElementById('laterBtn');
+
+            // Set focus on restart button
+            newRestartBtn.focus(); 
+
+            newRestartBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+                runSpecialRestartAnimation(); // Initiate animation and actual restart
+            });
+
+            newLaterBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+                returnToMainMenu(); // Return to the main menu without restarting
+            });
+
+            // Handle keyboard input for the modal
+            document.addEventListener('keydown', function modalKeyHandler(e) {
+                if (modal.style.display === 'block') {
+                    e.preventDefault();
+                    if (e.key === 'Enter') {
+                        newRestartBtn.click();
+                    } else if (e.key === 'Escape') {
+                        newLaterBtn.click();
+                    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                        if (document.activeElement === newRestartBtn) {
+                            newLaterBtn.focus();
+                        } else {
+                            newRestartBtn.focus();
+                        }
+                    }
+                } else {
+                     document.removeEventListener('keydown', modalKeyHandler);
+                }
+            });
+        }
+        
+        function runSpecialRestartAnimation() {
+            const overlay = document.getElementById('restartAnimationOverlay');
+
+            // 1. Hide everything else (already done by showRestartPrompt's screen clear)
+            content.style.display = 'none';
+            
+            // 2. Start animation (Black to Red/Orange Gradient)
+            overlay.style.display = 'block';
+            overlay.classList.add('animate-in');
+            
+            // 3. After animation duration, perform the actual restart
+            // Animation is 3.5s
+            setTimeout(() => {
+                location.reload(); 
+            }, 3500); 
+        }
+
+        // ----------------------------------------------------
+        // OPTION HANDLER
+        // ----------------------------------------------------
+        function handleOption(index) {
+            let optionId = options[index].id;
+            let optionNumber = parseInt(optionId.replace('option', ''));
+
+            // Handle Disable Safe Mode (Option 4 when in Safe Mode)
+            if (optionNumber === 4 && isSafeMode) {
+                fadeOutScreen(() => {
+                    toggleSafeMode(true);
+                });
+                return;
+            }
+
+            if (optionNumber === 1) { 
+                // [1] Restart
+                fadeOutScreen(() => {
+                    showTypingText(T('RESTARTING'), () => {
+                        setTimeout(() => {
+                            showCountdown(3, () => {
+                                location.reload();
+                            });
+                        }, disableAnimations ? 50 : 1000);
+                    }, 'text-blue');
+                });
+            } else if (optionNumber === 2) { 
+                // [2] Shut Down
+                fadeOutScreen(() => {
+                    showTypingText(T('SHUTDOWN_QUESTION'), () => {
+                        document.addEventListener('keydown', function shutdownHandler(e) {
+                            if (e.key === 'y' || e.key === 'Y' || e.key === T('YES').toLowerCase()) {
+                                document.removeEventListener('keydown', shutdownHandler);
+                                showTypingText(`${T('SHUTDOWN_QUESTION').split('?')[0]}? ${T('YES')}`, () => {
+                                    setTimeout(() => {
+                                        showLine(T('SYSTEM_HALTED'), 'text-red');
+                                        showLine(T('DISPLAY_OFF'));
+                                        if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+                                    }, disableAnimations ? 50 : 1000);
+                                });
+                            } else if (e.key === 'n' || e.key === 'N' || e.key === T('NO').toLowerCase()) {
+                                document.removeEventListener('keydown', shutdownHandler);
+                                showTypingText(`${T('SHUTDOWN_QUESTION').split('?')[0]}? ${T('NO')}`, () => {
+                                    setTimeout(returnToMainMenu, disableAnimations ? 50 : 1000);
+                                });
+                            }
+                        });
+                    }, 'text-red');
+                });
+            } else if (optionNumber === 3) { 
+                // [3] System Repair / Optimization
+                const repairText = isSafeMode ? T('SYSTEM_OPTIMIZATION') : T('SYSTEM_REPAIR');
+                fadeOutScreen(() => {
+                    showTypingText(`${repairText} - ${T('PERFORM_CHECK')}`, () => {
+                        document.addEventListener('keydown', function systemCheckHandler(e) {
+                            if (e.key === 'y' || e.key === 'Y' || e.key === T('YES').toLowerCase()) {
+                                document.removeEventListener('keydown', systemCheckHandler);
+                                showTypingText(`${T('PERFORM_CHECK').split('?')[0]}? ${T('YES')}`, () => {
+                                    setTimeout(runSystemCheck, disableAnimations ? 50 : 1000);
+                                });
+                            } else if (e.key === 'n' || e.key === 'N' || e.key === T('NO').toLowerCase()) {
+                                document.removeEventListener('keydown', systemCheckHandler);
+                                showTypingText(`${T('PERFORM_CHECK').split('?')[0]}? ${T('NO')}`, () => {
+                                    setTimeout(returnToMainMenu, disableAnimations ? 50 : 1000);
+                                });
+                            }
+                        });
+                    }, 'text-blue');
+                });
+            } else if (optionNumber === 4) { 
+                // [4] Version Check
+                runVersionCheck();
+            } else if (optionNumber === 5) { 
+                // [5] Hardware Information Viewer
+                runHardwareInfoViewer();
+            } else if (optionNumber === 6) { 
+                // [6] Memory Test
+                fadeOutScreen(runMemoryCheck);
+            } else if (optionNumber === 7) { 
+                // [7] Hard Drive SMART Status Viewer
+                fadeOutScreen(runSmartStatusViewer);
+            } else if (optionNumber === 8) { 
+                // [8] Boot Order Configuration
+                fadeOutScreen(runBootOrderConfig);
+            } else if (optionNumber === 9) { 
+                // [9] Error Code Log
+                fadeOutScreen(runErrorCodeLog);
+            } else if (optionNumber === 10) { 
+                // [10] Date/Time & Font Settings
+                runSettings();
+            } else if (optionNumber === 11) { 
+                // [11] Command
+                runCommand();
+            } else if (optionNumber === 12) { 
+                // [12] Version Update Log
+                runVersionUpdateLog();
+            } else if (optionNumber === 13) { 
+                // [13] Language Selection
+                runLanguageSelection();
+            }
+        }
+        
+        // ----------------------------------------------------
+        // [13] Language Selection
+        // ----------------------------------------------------
+        function runLanguageSelection() {
+            const availableLanguages = [
+                { key: 'en', name: T('LANGUAGE_ENGLISH').split('] ')[1] },
+                { key: 'zh-CN', name: T('LANGUAGE_CHINESE').split('] ')[1] }
+            ];
+            let selectedLangIndex = availableLanguages.findIndex(l => l.key === currentLanguage);
+
+            fadeOutScreen(() => {
+                drawLanguageMenu();
+                document.addEventListener('keydown', langKeyHandler);
+            });
+
+            function drawLanguageMenu() {
+                // Clear screen
+                const childNodes = biosScreen.childNodes;
+                for (let i = childNodes.length - 1; i >= 0; i--) {
+                    if (childNodes[i] !== content) {
+                        biosScreen.removeChild(childNodes[i]);
+                    }
+                }
+                
+                showLine('--------------------------------------------------');
+                showLine(` ${T('LANGUAGE_TITLE')}`);
+                showLine('--------------------------------------------------');
+                showLine(T('SELECT_LANGUAGE'));
+                showLine('');
+                
+                availableLanguages.forEach((lang, i) => {
+                    const optionDiv = document.createElement('div');
+                    optionDiv.className = 'option' + (i === selectedLangIndex ? ' highlight' : '');
+                    optionDiv.textContent = `[${i + 1}] ${lang.name}`;
+                    biosScreen.appendChild(optionDiv);
+                });
+                showLine('');
+                showLine(T('MENU_SELECT_INSTRUCTIONS'));
+                showLine(T('EXIT_ESCAPE'));
+            }
+
+            function langKeyHandler(e) {
+                e.preventDefault();
+                if (e.key === 'ArrowUp') {
+                    selectedLangIndex = (selectedLangIndex - 1 + availableLanguages.length) % availableLanguages.length;
+                    drawLanguageMenu();
+                } else if (e.key === 'ArrowDown') {
+                    selectedLangIndex = (selectedLangIndex + 1) % availableLanguages.length;
+                    drawLanguageMenu();
+                } else if (e.key === 'Enter') {
+                    document.removeEventListener('keydown', langKeyHandler);
+                    const newLangKey = availableLanguages[selectedLangIndex].key;
+                    if (newLangKey === currentLanguage) {
+                        showLine('');
+                        showLine(T('ALREADY_INSTALLED'), 'text-red');
+                        setTimeout(drawLanguageMenu, 1000);
+                        document.addEventListener('keydown', langKeyHandler); // Re-attach handler
+                        return;
+                    }
+                    currentLanguage = newLangKey;
+                    localStorage.setItem('systemLanguage', newLangKey);
+                    
+                    // The text is now in the new language
+                    showTypingText(T('LANGUAGE_APPLIED', { lang: availableLanguages[selectedLangIndex].name }), () => {
+                        setTimeout(() => {
+                            showCountdown(3, () => {
+                                location.reload();
+                            });
+                        }, disableAnimations ? 50 : 1000);
+                    }, 'text-theme-primary');
+                } else if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', langKeyHandler);
+                    returnToMainMenu();
+                }
+            }
+        }
+        
+        // ----------------------------------------------------
+        // [12] Version Update Log
+        // ----------------------------------------------------
+        function runVersionUpdateLog() {
+            // Include new version v1.0.0
+            const logVersions = [LATEST_VERSION, PREVIOUS_VERSION, OLD_PREVIOUS_VERSION, LEGACY_VERSION, ABANDONED_VERSION]; 
+            let selectedLogIndex = 0;
+
+            fadeOutScreen(() => {
+                drawLogMenu();
+                document.addEventListener('keydown', logKeyHandler);
+            });
+
+            function drawLogMenu() {
+                // Clear screen
+                const childNodes = biosScreen.childNodes;
+                for (let i = childNodes.length - 1; i >= 0; i--) {
+                    if (childNodes[i] !== content) {
+                        biosScreen.removeChild(childNodes[i]);
+                    }
+                }
+                
+                showLine('--------------------------------------------------');
+                showLine(` ${T('UPDATE_LOG_TITLE')}`);
+                showLine('--------------------------------------------------');
+                showLine(`${T('CURRENT_INSTALLED_VERSION')}: ${currentVersion}`, 'text-blue');
+                showLine('');
+                showLine(T('UPDATE_LOG_SELECT'));
+                showLine('');
+
+                logVersions.forEach((ver, i) => {
+                    const optionDiv = document.createElement('div');
+                    optionDiv.className = 'option' + (i === selectedLogIndex ? ' highlight' : '');
+                    optionDiv.textContent = `[${i+1}] ${ver}`;
+                    biosScreen.appendChild(optionDiv);
+                });
+                showLine('');
+                showLine(T('UPDATE_LOG_INSTRUCTIONS'));
+                showLine(T('EXIT_ESCAPE'));
+            }
+
+            function logKeyHandler(e) {
+                e.preventDefault();
+                if (e.key === 'ArrowUp') {
+                    selectedLogIndex = (selectedLogIndex - 1 + logVersions.length) % logVersions.length;
+                    drawLogMenu();
+                } else if (e.key === 'ArrowDown') {
+                    selectedLogIndex = (selectedLogIndex + 1) % logVersions.length;
+                    drawLogMenu();
+                } else if (e.key === 'Enter') {
+                    document.removeEventListener('keydown', logKeyHandler);
+                    viewChangelog(logVersions[selectedLogIndex]);
+                } else if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', logKeyHandler);
+                    returnToMainMenu();
+                }
+            }
+
+            function viewChangelog(version) {
+                 // Clear screen for changelog view
+                 const childNodes = biosScreen.childNodes;
+                 for (let i = childNodes.length - 1; i >= 0; i--) {
+                     if (childNodes[i] !== content) {
+                         biosScreen.removeChild(childNodes[i]);
+                     }
+                 }
+                 
+                 showLine('--------------------------------------------------');
+                 showLine(` ${T('CHANGELOG_TITLE', { version: version })}`);
+                 showLine('--------------------------------------------------');
+                 showLine('');
+
+                 const changelog = CHANGE_LOGS[version];
+                 if (changelog && changelog.length > 0) {
+                     changelog.forEach(item => {
+                         showLine(`- ${item}`);
+                     });
+                 } else {
+                     showLine(T('CHANGELOG_NO_DATA'), 'text-red');
+                 }
+
+                 showLine('');
+                 showLine(T('CHANGELOG_RETURN'));
+
+                 document.addEventListener('keydown', function changelogReturnHandler(e) {
+                     if (e.key === 'Escape' || e.key === 'Enter') {
+                         document.removeEventListener('keydown', changelogReturnHandler);
+                         drawLogMenu(); // Return to log menu
+                         document.addEventListener('keydown', logKeyHandler);
+                     }
+                 });
+            }
+        }
+        
+        // ----------------------------------------------------
+        // [4] Version Check (UPDATED)
+        // ----------------------------------------------------
+        function runVersionCheck() {
+            // List versions for Upgrade/Downgrade
+            const versionOptions = [LATEST_VERSION, PREVIOUS_VERSION, OLD_PREVIOUS_VERSION, LEGACY_VERSION]; // Added v0.16a
+            let selectedVerIndex = 0;
+            
+            fadeOutScreen(() => {
+                drawVersionMenu();
+                document.addEventListener('keydown', versionKeyHandler);
+            });
+
+            function drawVersionMenu() {
+                const childNodes = biosScreen.childNodes;
+                for (let i = childNodes.length - 1; i >= 0; i--) {
+                    if (childNodes[i] !== content) {
+                        biosScreen.removeChild(childNodes[i]);
+                    }
+                }
+                
+                showLine('--------------------------------------------------');
+                showLine(` ${T('VERSION_CHECK_TITLE')}`);
+                showLine('--------------------------------------------------');
+                showLine('');
+                showLine(`${T('CURRENT_INSTALLED_VERSION')} ${currentVersion}`, 'text-blue');
+                showLine('');
+
+                if (currentVersion !== LATEST_VERSION) {
+                    showLine(T('NEW_UPDATE_AVAILABLE'), 'text-red');
+                    showLine('');
+                }
+                
+                showLine(T('SELECT_VERSION_INSTALL'));
+                versionOptions.forEach((ver, i) => {
+                    const optionDiv = document.createElement('div');
+                    let label = ver;
+                    if (ver === LATEST_VERSION) label += T('LATEST');
+                    if (ver === currentVersion) label += T('CURRENT');
+                    optionDiv.className = 'option' + (i === selectedVerIndex ? ' highlight' : '');
+                    optionDiv.textContent = `[${i + 1}] ${label}`;
+                    biosScreen.appendChild(optionDiv);
+                });
+                showLine('');
+                showLine(T('MENU_SELECT_INSTRUCTIONS'));
+                showLine(T('EXIT_ESCAPE'));
+            }
+
+            function versionKeyHandler(e) {
+                e.preventDefault();
+                if (e.key === 'ArrowUp') {
+                    selectedVerIndex = (selectedVerIndex - 1 + versionOptions.length) % versionOptions.length;
+                    drawVersionMenu();
+                } else if (e.key === 'ArrowDown') {
+                    selectedVerIndex = (selectedVerIndex + 1) % versionOptions.length;
+                    drawVersionMenu();
+                } else if (e.key === 'Enter') {
+                    document.removeEventListener('keydown', versionKeyHandler);
+                    const selectedVersion = versionOptions[selectedVerIndex];
+
+                    if (selectedVersion === currentVersion) {
+                        showLine('');
+                        showLine(T('ALREADY_INSTALLED'), 'text-red');
+                        setTimeout(drawVersionMenu, 1000);
+                        document.addEventListener('keydown', versionKeyHandler);
+                        return;
+                    }
+                    
+                    const action = (selectedVerIndex < versionOptions.indexOf(currentVersion)) ? T('UPGRADE') : T('DOWNGRADE');
+                    
+                    showLine('');
+                    showTypingText(T('CONFIRM_ACTION', { action: action, version: selectedVersion }) + T('CONFIRM_YES_NO'), () => {
+                         document.addEventListener('keydown', function confirmHandler(e) {
+                             if (e.key === 'y' || e.key === 'Y' || e.key === T('YES').toLowerCase()) {
+                                 document.removeEventListener('keydown', confirmHandler);
+                                 showTypingText(`${T('CONFIRM')} ${T('YES')}`, () => {
+                                     setTimeout(() => installVersion(selectedVersion), disableAnimations ? 50 : 1000);
+                                 });
+                             } else if (e.key === 'n' || e.key === 'N' || e.key === T('NO').toLowerCase()) {
+                                 document.removeEventListener('keydown', confirmHandler);
+                                 showTypingText(`${T('CONFIRM')} ${T('NO')}`, () => {
+                                     setTimeout(drawVersionMenu, disableAnimations ? 50 : 500); // Return to version menu
+                                     document.addEventListener('keydown', versionKeyHandler);
+                                 });
+                             }
+                         });
+                    }, 'text-red');
+
+                } else if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', versionKeyHandler);
+                    returnToMainMenu();
+                }
+            }
+        }
+
+        // ... (rest of the functions remain the same: runSystemCheck, runMemoryCheck, etc.)
+
+        function runSystemCheck() {
+            // ... (intact)
+        }
+        function runMemoryCheck() {
+            // ... (intact)
+        }
+        function runSmartStatusViewer() {
+            // ... (intact)
+        }
+        function runBootOrderConfig() {
+            // ... (intact)
+        }
+        function runErrorCodeLog() {
+            // ... (intact)
+        }
+        function runHardwareInfoViewer() {
+            // ... (intact)
+        }
+        function runCommand() {
+            // ... (intact)
+        }
+        function runSettings() {
+            // ... (intact)
+        }
+        function runThemePickerLogic() {
+            // ... (intact)
+        }
+        function runFontSizeCustomizationLogic() {
+            // ... (intact)
+        }
+        function runDateTimeSetupLogic() {
+            // ... (intact)
+        }
+        function toggleAnimations() {
+            // ... (intact)
+        }
+        function toggleSafeMode(isRestarting) {
+            // ... (intact)
+        }
+
+
+        // Boilerplate from original script (not modifying the logic of these for simplicity)
+        function runSystemCheck() {
+            showTypingText(T('OPTION_REPAIR').split('] ')[1] + '...', () => {
+                setTimeout(() => {
+                    showLine(T('ANALYZING_FILESYSTEM'), 'text-theme-primary');
+                    showLine(T('SYSTEM_OK'), 'text-theme-primary');
+                    showTypingText(T('OPTION_OPTIMIZE').split('] ')[1] + '...', () => {
+                        setTimeout(() => {
+                            showLine(T('OPTIMIZATION_COMPLETE'), 'text-theme-primary');
+                            showProceedPrompt();
+                        }, disableAnimations ? 50 : 2500);
+                    });
+                }, disableAnimations ? 50 : 2000);
+            });
+        }
+        function runMemoryCheck() {
+             showLine('--------------------------------------------------');
+             showLine(` ${T('OPTION_MEMORY_TEST').split('] ')[1]}`);
+             showLine('--------------------------------------------------');
+             showTypingText('Testing memory module (0xFFFFFFF bytes)...', () => {
+                 setTimeout(() => {
+                     showLine(T('MEM_CHECK_PASS'), 'text-green');
+                     showProceedPrompt();
+                 }, disableAnimations ? 50 : 2500);
+             });
+        }
+        function runSmartStatusViewer() {
+             showLine('--------------------------------------------------');
+             showLine(` ${T('OPTION_SMART_STATUS').split('] ')[1]}`);
+             showLine('--------------------------------------------------');
+             showTypingText(T('SMART_CHECK'), () => {
+                 setTimeout(() => {
+                     showLine(T('DRIVE_STATUS_OK'), 'text-green');
+                     showLine(T('DRIVE_STATUS_OK_2'), 'text-green');
+                     showProceedPrompt();
+                 }, disableAnimations ? 50 : 2000);
+             });
+        }
+        function runBootOrderConfig() {
+            showLine(T('BOOT_ORDER_TITLE'));
+            showLine('[1] NVMe0 (Samsung 980 Pro)');
+            showLine('[2] SATA Hard Drive (Seagate Barracuda)');
+            showLine('[3] USB Drive');
+            showLine(T('BOOT_ORDER_SAVE'));
+            showProceedPrompt();
+        }
+        function runErrorCodeLog() {
+            showLine(T('ERROR_LOG_TITLE'));
+            showLine('2025-10-25 14:30:01 - POST Failure (Code 0x01)');
+            showLine('2025-10-27 09:15:22 - Fan Speed Error (Code 0x05)');
+            showLine(T('LOG_END'), 'text-theme-primary');
+            showProceedPrompt();
+        }
+        function runSettings() {
+            const settingsOptions = [ 
+                { nameKey: 'SETTING_DATETIME', action: runDateTimeSetupLogic },
+                { nameKey: 'SETTING_FONT', action: runFontSizeCustomizationLogic },
+                { nameKey: 'SETTING_THEME', action: runThemePickerLogic },
+                { nameKey: 'SETTING_SAFE_MODE', action: () => toggleSafeMode(false), dynamic: true, status: isSafeMode }, // Animation Toggle
+                { nameKey: 'SETTING_ANIMATION', action: toggleAnimations, dynamic: true, status: disableAnimations },
+                { nameKey: 'SETTING_RETURN', action: returnToMainMenu } 
+            ];
+            let selectedIndex = 0;
+            
+            fadeOutScreen(() => {
+                 drawSettingsMenu();
+                 document.addEventListener('keydown', settingsKeyHandler);
+            });
+
+            function drawSettingsMenu() {
+                // Clear screen
+                const childNodes = biosScreen.childNodes;
+                for (let i = childNodes.length - 1; i >= 0; i--) {
+                    if (childNodes[i] !== content) {
+                        biosScreen.removeChild(childNodes[i]);
+                    }
+                }
+
+                showLine('--------------------------------------------------');
+                showLine(` ${T('SETTINGS_TITLE')}`);
+                showLine('--------------------------------------------------');
+                showLine(T('MENU_SELECT_INSTRUCTIONS'));
+                showLine('');
+
+                settingsOptions.forEach((option, i) => {
+                    const optionDiv = document.createElement('div');
+                    optionDiv.className = 'option' + (i === selectedIndex ? ' highlight' : '');
+                    
+                    let text = T(option.nameKey);
+                    
+                    if (option.dynamic) {
+                        text += option.status ? ' (ON)' : ' (OFF)';
+                    }
+
+                    optionDiv.textContent = text;
+                    biosScreen.appendChild(optionDiv);
+                });
+                showLine('');
+                showLine(T('EXIT_ESCAPE'));
+            }
+
+            function settingsKeyHandler(e) {
+                e.preventDefault();
+                if (e.key === 'ArrowUp') {
+                    selectedIndex = (selectedIndex - 1 + settingsOptions.length) % settingsOptions.length;
+                } else if (e.key === 'ArrowDown') {
+                    selectedIndex = (selectedIndex + 1) % settingsOptions.length;
+                } else if (e.key === 'Enter') {
+                    document.removeEventListener('keydown', settingsKeyHandler);
+                    settingsOptions[selectedIndex].action();
+                    return;
+                } else if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', settingsKeyHandler);
+                    returnToMainMenu();
+                    return;
+                }
+                drawSettingsMenu();
+            }
+        }
+        function toggleSafeMode(isRestarting) {
+            isSafeMode = !isSafeMode;
+            localStorage.setItem('isSafeMode', isSafeMode);
+            
+            showLine('');
+            showTypingText(T('SAFE_MODE_SET', { status: isSafeMode ? 'ON' : 'OFF' }), () => {
+                if (isRestarting) {
+                    showLine('');
+                    showTypingText(T('SAFE_MODE_RESTART'), () => {
+                        setTimeout(() => {
+                            showCountdown(3, () => {
+                                location.reload();
+                            });
+                        }, disableAnimations ? 50 : 1000);
+                    }, 'text-red');
+                } else {
+                    setTimeout(runSettings, disableAnimations ? 50 : 500);
+                }
+            }, 'text-red');
+        }
+        function toggleAnimations() {
+            disableAnimations = !disableAnimations;
+            localStorage.setItem('disableAnimations', disableAnimations);
+            
+            applyInstantMode(disableAnimations);
+            
+            showLine('');
+            showTypingText(T('ANIMATION_SET', { status: disableAnimations ? 'OFF' : 'ON' }), () => {
+                setTimeout(runSettings, disableAnimations ? 50 : 500);
+            }, 'text-theme-primary');
+        }
+        function runThemePickerLogic() {
+            const themeKeys = Object.keys(THEMES);
+            let tempThemeIndex = themeKeys.indexOf(currentTheme);
+
+            function drawThemeMenu() {
+                const childNodes = biosScreen.childNodes;
+                for (let i = childNodes.length - 1; i >= 0; i--) {
+                    if (childNodes[i] !== content) {
+                        biosScreen.removeChild(childNodes[i]);
+                    }
+                }
+                
+                showLine('--------------------------------------------------');
+                showLine(` ${T('THEME_TITLE')}`);
+                showLine('--------------------------------------------------');
+                showLine(T('CURRENT_THEME') + THEMES[currentTheme].title);
+                showLine(T('THEME_INSTRUCTIONS'));
+                showLine('');
+
+                themeKeys.forEach((key, i) => {
+                    const theme = THEMES[key];
+                    const optionDiv = document.createElement('div');
+                    optionDiv.className = 'option' + (i === tempThemeIndex ? ' highlight' : '');
+                    optionDiv.innerHTML = `[${i + 1}] ${key.replace('_', ' ').padEnd(10, ' ')} <span style="color: ${theme.primary};">${theme.title}</span>`;
+                    biosScreen.appendChild(optionDiv);
+                });
+                showLine('');
+                showLine(T('EXIT_ESCAPE'));
+            }
+
+            function keyHandler(e) {
+                e.preventDefault();
+                if (e.key === 'ArrowUp') {
+                    tempThemeIndex = (tempThemeIndex - 1 + themeKeys.length) % themeKeys.length;
+                } else if (e.key === 'ArrowDown') {
+                    tempThemeIndex = (tempThemeIndex + 1) % themeKeys.length;
+                } else if (e.key === 'Enter') {
+                    document.removeEventListener('keydown', keyHandler);
+                    const newThemeKey = themeKeys[tempThemeIndex];
+                    applyTheme(newThemeKey);
+                    showTypingText(T('THEME_SET', { theme: newThemeKey.replace('_', ' ') }), () => {
+                        setTimeout(runSettings, disableAnimations ? 50 : 500);
+                    });
+                    return;
+                } else if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', keyHandler);
+                    applyTheme(currentTheme);
+                    runSettings();
+                    return;
+                }
+                drawThemeMenu();
+            }
+
+            fadeOutScreen(() => {
+                drawThemeMenu();
+                document.addEventListener('keydown', keyHandler);
+            });
+        }
+        function runFontSizeCustomizationLogic() {
+            let tempFontSize = currentFontSize;
+            let selectedDigitIndex = 0; // 0 for tens digit, 1 for ones digit
+
+            function drawCustomizationMenu() {
+                const childNodes = biosScreen.childNodes;
+                for (let i = childNodes.length - 1; i >= 0; i--) {
+                    if (childNodes[i] !== content) {
+                        biosScreen.removeChild(childNodes[i]);
+                    }
+                }
+                
+                showLine('--------------------------------------------------');
+                showLine(` ${T('FONT_SIZE_TITLE')}`);
+                showLine('--------------------------------------------------');
+                showLine(T('FONT_SIZE_INSTRUCTIONS'));
+                showLine(T('FONT_SIZE_LIMIT'));
+                showLine('');
+                showLine(T('CURRENT_FONT_SIZE', { size: currentFontSize }));
+                showLine('');
+
+                let sizeStr = tempFontSize.toString().padStart(2, '0');
+                let displayLine = T('SET_SIZE');
+
+                for (let i = 0; i < sizeStr.length; i++) {
+                    if (i === selectedDigitIndex) {
+                        displayLine += `[${sizeStr[i]}]`;
+                    } else {
+                        displayLine += ` ${sizeStr[i]} `;
+                    }
+                }
+                displayLine += ' px';
+                showLine(displayLine, 'text-blue');
+                showLine('');
+            }
+
+            function keyHandler(e) {
+                e.preventDefault();
+                if (e.key === 'ArrowRight') {
+                    selectedDigitIndex = (selectedDigitIndex + 1) % 2;
+                } else if (e.key === 'ArrowLeft') {
+                    selectedDigitIndex = (selectedDigitIndex - 1 + 2) % 2;
+                } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    let multiplier = (selectedDigitIndex === 0) ? 10 : 1;
+                    let increment = (e.key === 'ArrowUp') ? multiplier : -multiplier;
+
+                    let newSize = tempFontSize + increment;
+                    
+                    if (newSize >= MIN_FONT_SIZE && newSize <= MAX_FONT_SIZE) {
+                        tempFontSize = newSize;
+                    } else if (newSize < MIN_FONT_SIZE) {
+                        tempFontSize = MIN_FONT_SIZE;
+                    } else if (newSize > MAX_FONT_SIZE) {
+                        tempFontSize = MAX_FONT_SIZE;
+                    }
+                } else if (e.key === 'Enter') {
+                    document.removeEventListener('keydown', keyHandler);
+                    currentFontSize = tempFontSize;
+                    localStorage.setItem('customFontSize', currentFontSize);
+                    applyFontSize(currentFontSize);
+
+                    showLine('');
+                    showTypingText(T('SAVING_CMOS'), () => {
+                         setTimeout(() => {
+                             showTypingText(T('FONT_SIZE_SAVED'), () => {
+                                 setTimeout(runSettings, disableAnimations ? 50 : 500);
+                             });
+                         }, disableAnimations ? 50 : 500);
+                    }, 'text-theme-primary');
+                    return;
+                } else if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', keyHandler);
+                    runSettings();
+                    return;
+                }
+                drawCustomizationMenu();
+            }
+
+            fadeOutScreen(() => {
+                drawCustomizationMenu();
+                document.addEventListener('keydown', keyHandler);
+            });
+        }
+        function runDateTimeSetupLogic() {
+            let tempDate = new Date(currentDate.getTime());
+            let values = [
+                tempDate.getMonth() + 1, // Month (1-12)
+                tempDate.getDate(),      // Day (1-31)
+                tempDate.getFullYear(),  // Year
+                tempDate.getHours(),     // Hour (0-23)
+                tempDate.getMinutes(),   // Minute (0-59)
+                tempDate.getSeconds()    // Second (0-59)
+            ];
+            const fields = [
+                { min: 1, max: 12, name: 'Month' },
+                { min: 1, max: 31, name: 'Day' },
+                { min: 2024, max: 2099, name: 'Year' },
+                { min: 0, max: 23, name: 'Hour' },
+                { min: 0, max: 59, name: 'Minute' },
+                { min: 0, max: 59, name: 'Second' }
+            ];
+            let selectedField = 0;
+            
+            // Validate month/day based on month
+            function validateDate(month, day, year) {
+                const date = new Date(year, month - 1, day);
+                return date.getMonth() + 1 === month && date.getDate() === day;
+            }
+
+            function drawSetupMenu() {
+                const childNodes = biosScreen.childNodes;
+                for (let i = childNodes.length - 1; i >= 0; i--) {
+                    if (childNodes[i] !== content) {
+                        biosScreen.removeChild(childNodes[i]);
+                    }
+                }
+                
+                showLine('--------------------------------------------------');
+                showLine(` ${T('DATETIME_TITLE')}`);
+                showLine('--------------------------------------------------');
+                showLine(T('DATETIME_INSTRUCTIONS'));
+                showLine('');
+
+                let timeLine = ' ';
+                const fieldKeys = ['FIELD_MONTH', 'FIELD_DAY', 'FIELD_YEAR', 'FIELD_HOUR', 'FIELD_MINUTE', 'FIELD_SECOND'];
+
+                fieldKeys.forEach((key, i) => {
+                    const fieldName = T(key);
+                    const val = (i < 3) ? values[i] : pad(values[i]);
+                    const displayValue = i === 2 ? val : pad(val);
+                    
+                    let display = `${fieldName}: ${displayValue}`;
+                    if (i === selectedField) {
+                        display = `[ ${fieldName}: ${displayValue} ]`;
+                        timeLine += display;
+                    } else {
+                        timeLine += display;
+                    }
+                    timeLine += (i < fields.length - 1) ? ' ' : '';
+                });
+
+                showLine(timeLine, 'text-blue');
+                showLine('');
+                
+                const timeStr = `${pad(values[3])}:${pad(values[4])}:${pad(values[5])}`;
+                const dateStr = `${pad(values[0])}/${pad(values[1])}/${values[2]}`;
+                showLine(T('CURRENT_TIME_DATE', { time: timeStr, date: dateStr }));
+                showLine('');
+            }
+
+            function keyHandler(e) {
+                e.preventDefault();
+                if (e.key === 'ArrowRight') {
+                    selectedField = (selectedField + 1) % fields.length;
+                } else if (e.key === 'ArrowLeft') {
+                    selectedField = (selectedField - 1 + fields.length) % fields.length;
+                } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    let increment = (e.key === 'ArrowUp') ? 1 : -1;
+                    let newValue = values[selectedField] + increment;
+                    const field = fields[selectedField];
+
+                    // Loop value within min/max bounds
+                    if (newValue > field.max) {
+                        newValue = field.min;
+                    } else if (newValue < field.min) {
+                        newValue = field.max;
+                    }
+
+                    // Special handling for Day (Field 1) to respect month/year
+                    if (selectedField === 1) { 
+                        let month = values[0];
+                        let year = values[2];
+                        if (validateDate(month, newValue, year)) {
+                            values[selectedField] = newValue;
+                        } else {
+                            // If invalid date (e.g., Feb 30), find next valid day (e.g., Mar 1 or Feb 29)
+                            let tempDate = new Date(year, month - 1, newValue);
+                            values[selectedField] = tempDate.getDate();
+                        }
+                    } else {
+                        values[selectedField] = newValue;
+                    }
+                    
+                    // Special handling for Month (Field 0): Recalculate Day if current day is invalid in new month
+                    if (selectedField === 0 && !validateDate(values[0], values[1], values[2])) {
+                        let maxDaysInNewMonth = new Date(values[2], values[0], 0).getDate();
+                        values[1] = Math.min(values[1], maxDaysInNewMonth);
+                    }
+
+                } else if (e.key === 'Enter') {
+                    document.removeEventListener('keydown', keyHandler);
+                    
+                    // The year needs to be first for the Date constructor (Year, MonthIndex, Day, ...)
+                    currentDate = new Date(values[2], values[0] - 1, values[1], values[3], values[4], values[5]); 
+                    localStorage.setItem('systemDateTimestamp', currentDate.getTime());
+                    updateDateTimeDisplay();
+
+                    const delay = disableAnimations ? 50 : 1000;
+                    showTypingText(T('SAVING_DATETIME'), () => {
+                        setTimeout(() => {
+                            showTypingText(T('SETUP_COMPLETE'), () => {
+                                setTimeout(runSettings, disableAnimations ? 50 : 500);
+                            });
+                        }, disableAnimations ? 50 : 500);
+                    }, 'text-theme-primary');
+                    return;
+                } else if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', keyHandler);
+                    runSettings();
+                    return;
+                }
+                drawSetupMenu();
+            }
+
+            fadeOutScreen(() => {
+                drawSetupMenu();
+                document.addEventListener('keydown', keyHandler);
+            });
+        }
+        function runHardwareInfoViewer() {
+            // ... (intact)
+        }
+        function runCommand() {
+            // ... (intact)
+        }
+        function startCommandPrompt() {
+            // ... (intact)
+        }
+        function executeCommand(command) {
+            // ... (intact)
+        }
+
+        function runHardwareInfoViewer() {
+            let detectionSuccessful = true; // Assume success for this demo
+
+            fadeOutScreen(() => {
+                 showLine('--------------------------------------------------');
+                 showLine(` ${T('HARDWARE_TITLE')}`);
+                 showLine('--------------------------------------------------');
+                 showTypingText(T('HARDWARE_DETECTING'), () => {
+                     setTimeout(() => {
+                         if (detectionSuccessful) {
+                             showLine(T('DETECTION_SUCCESS'), 'text-green');
+                             showLine('');
+
+                             const hardwareSections = [
+                                 { titleKey: 'SECTION_SYSTEM_INFO', data: [
+                                     ['Model', 'BIOS-TERM v1.0.0'],
+                                     ['Manufacturer', 'GEMINI'],
+                                     ['Total Memory', '16384 MB DDR4 @ 3200MHz']
+                                 ]},
+                                 { titleKey: 'SECTION_CPU', data: [
+                                     ['Processor', 'Intel Core i9-14900K'],
+                                     ['Clock Speed', '6.0 GHz'],
+                                     ['Cores/Threads', '24 Cores / 32 Threads']
+                                 ]},
+                                 { titleKey: 'SECTION_RAM', data: [
+                                     ['Type', 'DDR4 SDRAM'],
+                                     ['Slots Used', '2 of 4'],
+                                     ['Speed', '3200 MT/s']
+                                 ]},
+                                 { titleKey: 'SECTION_STORAGE', data: [
+                                     ['Drive 1', 'Samsung 980 Pro 2TB (NVMe)'],
+                                     ['Drive 2', 'Seagate Barracuda 4TB (SATA)']
+                                 ]},
+                                 { titleKey: 'SECTION_GPU', data: [
+                                     ['Adapter', 'NVIDIA GeForce RTX 4090'],
+                                     ['VRAM', '24 GB GDDR6X']
+                                 ]},
+                                 { titleKey: 'SECTION_NETWORK', data: [
+                                     ['LAN', 'Intel Ethernet Connection (2.5 GbE)'],
+                                     ['WLAN', 'Intel Wi-Fi 7']
+                                 ]},
+                                 { titleKey: 'SECTION_AUDIO', data: [
+                                     ['Codec', 'Realtek ALC4080']
+                                 ]}
+                             ];
+                             
+                             let currentSectionIndex = 0;
+                             
+                             function loadNextSection() {
+                                 if (currentSectionIndex < hardwareSections.length) {
+                                     const section = hardwareSections[currentSectionIndex];
+                                     showLine('--- ' + T(section.titleKey) + ' ---', 'text-theme-primary');
+                                     
+                                     const displayDelay = disableAnimations ? 50 : 100;
+
+                                     let delay = 0;
+                                     section.data.forEach(item => {
+                                         setTimeout(() => {
+                                             showLine(`${item[0].padEnd(16, '.')}: ${item[1]}`);
+                                         }, delay);
+                                         delay += displayDelay;
+                                     });
+                                     
+                                     setTimeout(() => {
+                                         currentSectionIndex++;
+                                         showLine('');
+                                         loadNextSection();
+                                     }, delay + (disableAnimations ? 50 : 500));
+                                 } else {
+                                     showLine('');
+                                     showLine('--------------------------------------------------');
+                                     setTimeout(showProceedPrompt, disableAnimations ? 50 : 500);
+                                 }
+                             }
+                             loadNextSection();
+                         } else {
+                             showLine(T('DETECTION_FAILED'), 'text-red');
+                             showProceedPrompt();
+                         }
+                     }, disableAnimations ? 50 : 3000);
+                 });
+            });
+        }
+        function runCommand() {
+            fadeOutScreen(() => {
+                showTypingText(T('COMMAND_SETTING_UP'), () => {
+                    setTimeout(startCommandPrompt, disableAnimations ? 50 : 1000);
+                }, 'text-blue');
+            });
+        }
+        function startCommandPrompt() {
+            let currentInput = '';
+            showLine(T('COMMAND_ENTER'));
+            const commandLineContainer = document.createElement('div');
+            commandLineContainer.className = 'info-line command-line-cursor';
+            biosScreen.appendChild(commandLineContainer);
+            // Ensure command prompt scrolls to the bottom when starting a new input line
+            commandLineContainer.scrollIntoView({ behavior: 'auto', block: 'end' });
+
+            function updateCommandDisplay() {
+                // In instant mode, the cursor blink must be disabled at the span level
+                const cursorClass = disableAnimations ? 'typing instant-mode-cursor-disabled' : 'typing';
+                const cursor = `<span class="${cursorClass}"><span>_</span></span>`;
+                commandLineContainer.innerHTML = `> ${currentInput}${cursor}`; 
+
+                // Manually remove cursor for instant mode span if necessary
+                if(disableAnimations) {
+                    const cursorSpan = commandLineContainer.querySelector('.instant-mode-cursor-disabled span');
+                    if (cursorSpan) {
+                        cursorSpan.style.setProperty('content', 'none', 'important');
+                        cursorSpan.style.setProperty('animation', 'none', 'important');
+                    }
+                }
+            }
+
+            updateCommandDisplay();
+
+            function keyHandler(e) {
+                e.preventDefault();
+                if (e.key === 'Enter') {
+                    document.removeEventListener('keydown', keyHandler);
+                    commandLineContainer.innerHTML = `> ${currentInput}`;
+                    executeCommand(currentInput.trim().toLowerCase());
+                    return;
+                } else if (e.key === 'Backspace') {
+                    currentInput = currentInput.slice(0, -1);
+                } else if (e.key.length === 1 && /[a-zA-Z0-9_ /]/.test(e.key)) {
+                    if (currentInput.length < 50) {
+                        currentInput += e.key;
+                    }
+                } else if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', keyHandler);
+                    showProceedPrompt(); // Exit Command Prompt
+                    return;
+                }
+                updateCommandDisplay();
+            }
+
+            document.addEventListener('keydown', keyHandler);
+        }
+        function executeCommand(command) {
+            showLine('');
+            // --- Commands that exit the command prompt and return to main menu ---
+            if (command === 'exit') {
+                showLine(T('COMMAND_EXIT'));
+                document.addEventListener('keydown', function exitHandler(e) {
+                    if (e.key === 'Enter') {
+                        document.removeEventListener('keydown', exitHandler);
+                        returnToMainMenu();
+                    }
+                });
+                return;
+            }
+            if (command === 'sy_restart') {
+                showLine(T('COMMAND_EXECUTING', { command: command, description: T('OPTION_RESTART') }));
+                showTypingText(T('RESTARTING'), () => {
+                    setTimeout(() => {
+                        showCountdown(3, () => {
+                            location.reload();
+                        });
+                    }, disableAnimations ? 50 : 1000);
+                }, 'text-blue');
+                return;
+            }
+            if (command === 'sy_shutd') {
+                showLine(T('COMMAND_EXECUTING', { command: command, description: T('OPTION_SHUTDOWN') }));
+                showTypingText(T('SHUTDOWN_QUESTION'), () => {
+                    document.addEventListener('keydown', function shutdownHandler(e) {
+                        if (e.key === 'y' || e.key === 'Y' || e.key === T('YES').toLowerCase()) {
+                            document.removeEventListener('keydown', shutdownHandler);
+                            showTypingText(`${T('SHUTDOWN_QUESTION').split('?')[0]}? ${T('YES')}`, () => {
+                                setTimeout(() => {
+                                    showLine(T('SYSTEM_HALTED'), 'text-red');
+                                    showLine(T('DISPLAY_OFF'));
+                                    if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+                                }, disableAnimations ? 50 : 1000);
+                            });
+                        } else if (e.key === 'n' || e.key === 'N' || e.key === T('NO').toLowerCase()) {
+                            document.removeEventListener('keydown', shutdownHandler);
+                            showTypingText(`${T('SHUTDOWN_QUESTION').split('?')[0]}? ${T('NO')}`, () => {
+                                setTimeout(startCommandPrompt, disableAnimations ? 50 : 500);
+                            });
+                        }
+                    });
+                }, 'text-red');
+                return;
+            }
+            if (command === 'sy_repair') {
+                 showLine(T('COMMAND_EXECUTING', { command: command, description: T('SYSTEM_REPAIR') }));
+                 showTypingText(T('OPTION_REPAIR').split('] ')[1] + '...', () => {
+                     setTimeout(() => {
+                         showLine(T('ANALYZING_FILESYSTEM'), 'text-theme-primary');
+                         showLine(T('SYSTEM_OK'), 'text-theme-primary');
+                         showTypingText(T('OPTION_OPTIMIZE').split('] ')[1] + '...', () => {
+                             setTimeout(() => {
+                                 showLine(T('OPTIMIZATION_COMPLETE'), 'text-theme-primary');
+                                 showProceedPrompt();
+                             }, disableAnimations ? 50 : 2500);
+                         });
+                     }, disableAnimations ? 50 : 2000);
+                 });
+                 return;
+            }
+            if (command === 'sy_update' || command === 'sy_vdg') {
+                showLine(T('COMMAND_EXECUTING', { command: command, description: T('VERSION_CHECK_TITLE') }));
+                // Reuse the version check logic, but force it to exit Command Prompt flow
+                runVersionCheck();
+                return;
+            }
+            
+            // --- Commands that stay in the command prompt ---
+            if (command === '/help' || command === 'help') {
+                showLine(T('COMMAND_HELP_TITLE'));
+                for(let i=1; i<=9; i++) {
+                     showLine(T(`COMMAND_HELP_${i}`));
+                }
+            } else if (command === 'check_version') {
+                showLine(`${T('CURRENT_INSTALLED_VERSION')}: ${currentVersion}`, 'text-blue');
+            } else if (command === 'sy_vdg_002') {
+                showLine(T('COMMAND_EXECUTING', { command: command, description: T('DOWNGRADE') }));
+                showTypingText(T('COMMAND_DOWNGRADE_CONFIRM'), () => {
+                    document.addEventListener('keydown', function confirmHandler(e) {
+                        if (e.key === 'y' || e.key === 'Y' || e.key === T('YES').toLowerCase()) {
+                            document.removeEventListener('keydown', confirmHandler);
+                            showTypingText(`${T('CONFIRM')} ${T('YES')}`, () => {
+                                setTimeout(() => installVersion(LEGACY_VERSION), disableAnimations ? 50 : 1000);
+                            });
+                        } else if (e.key === 'n' || e.key === 'N' || e.key === T('NO').toLowerCase()) {
+                            document.removeEventListener('keydown', confirmHandler);
+                            showTypingText(`${T('CONFIRM')} ${T('NO')}`, () => {
+                                setTimeout(startCommandPrompt, disableAnimations ? 50 : 500);
+                            });
+                        }
+                    });
+                });
+                return; // Wait for user input (Y/N)
+            } else if (command === '') {
+                showLine(T('COMMAND_NO_ENTRY'));
+            } else {
+                showLine(T('COMMAND_ERROR', { command: command }), 'text-red');
+            }
+            showLine(''); 
+            
+            // Loop back to the command prompt for non-screen-taking commands
+            setTimeout(startCommandPrompt, disableAnimations ? 50 : 500);
+        }
+        
+    });
+     </script>
+</body>
+</html>
