@@ -416,6 +416,10 @@
             <div class="k-btn" data-key="Escape">ESC</div>
             <div class="k-btn" data-key="ArrowDown">▼</div>
             <div class="k-btn-spacer"></div>
+
+            <div class="k-btn" data-key="y">Y</div>
+            <div class="k-btn" data-key="n">N</div>
+            <div class="k-btn-spacer"></div>
         </div>
     </div>
     
@@ -710,7 +714,7 @@
                 'CURRENT_THEME': '当前主题: ',
                 'THEME_INSTRUCTIONS': '使用 [上]/[下] 选择, 按 [Enter] 应用, [Esc] 退出',
                 'THEME_SET': '主题已设置为 {theme}。',
-                'ANIMATION_SET': 'UI 动画设置为 {status}。',
+                'ANIMATION_SET': 'UI 动画设置为 {status}.',
                 'HARDWARE_TITLE': '硬件检测与诊断',
                 'HARDWARE_DETECTING': '正在尝试实时硬件检测 (3 秒)...',
                 'DETECTION_SUCCESS': '检测成功。',
@@ -1788,48 +1792,6 @@
         // ... (rest of the functions remain the same: runSystemCheck, runMemoryCheck, etc.)
 
         function runSystemCheck() {
-            // ... (intact)
-        }
-        function runMemoryCheck() {
-            // ... (intact)
-        }
-        function runSmartStatusViewer() {
-            // ... (intact)
-        }
-        function runBootOrderConfig() {
-            // ... (intact)
-        }
-        function runErrorCodeLog() {
-            // ... (intact)
-        }
-        function runHardwareInfoViewer() {
-            // ... (intact)
-        }
-        function runCommand() {
-            // ... (intact)
-        }
-        function runSettings() {
-            // ... (intact)
-        }
-        function runThemePickerLogic() {
-            // ... (intact)
-        }
-        function runFontSizeCustomizationLogic() {
-            // ... (intact)
-        }
-        function runDateTimeSetupLogic() {
-            // ... (intact)
-        }
-        function toggleAnimations() {
-            // ... (intact)
-        }
-        function toggleSafeMode(isRestarting) {
-            // ... (intact)
-        }
-
-
-        // Boilerplate from original script (not modifying the logic of these for simplicity)
-        function runSystemCheck() {
             showTypingText(T('OPTION_REPAIR').split('] ')[1] + '...', () => {
                 setTimeout(() => {
                     showLine(T('ANALYZING_FILESYSTEM'), 'text-theme-primary');
@@ -2255,19 +2217,6 @@
                 document.addEventListener('keydown', keyHandler);
             });
         }
-        function runHardwareInfoViewer() {
-            // ... (intact)
-        }
-        function runCommand() {
-            // ... (intact)
-        }
-        function startCommandPrompt() {
-            // ... (intact)
-        }
-        function executeCommand(command) {
-            // ... (intact)
-        }
-
         function runHardwareInfoViewer() {
             let detectionSuccessful = true; // Assume success for this demo
 
